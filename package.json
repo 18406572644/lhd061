@@ -1,0 +1,22 @@
+{
+  "name": "vintage-postcard-generator",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "复古邮政风电子明信片生成器",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "html2canvas": "^1.4.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.2.0",
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.38",
+    "autoprefixer": "^10.4.19"
+  }
+}

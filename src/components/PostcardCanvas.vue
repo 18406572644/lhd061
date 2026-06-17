@@ -1,0 +1,304 @@
+<script setup>import { computed, ref } from 'vue';
+import { papers, stamps, postmarks, fonts } from '@/data/assets.js';
+const props = defineProps({
+ modelValue: { type: Object, required: true },
+ readOnly: { type: Boolean, default: false }
+});
+const emit = defineEmits(['update:modelValue', 'select-item']);
+const canvasRef = ref(null);
+const dragState = ref(null);
+const resizing = ref(null);
+const paperObj = computed(() => papers.find(p => p.id === props.modelValue.paperId) || papers[0]);
+function getFont(fontId) {
+ return fonts.find(f => f.id === fontId) || fonts[0];
+}
+function getStamp(stampId) {
+ return stamps.find(s => s.id === stampId);
+}
+function getPostmark(pmId) {
+ return postmarks.find(p => p.id === pmId);
+}
+function updateField(key, value) {
+ emit('update:modelValue', { ...props.modelValue, [key]: value });
+}
+function updateItem(type, itemId, patch) {
+ const arr = props.modelValue[type];
+ const idx = arr.findIndex(i => i.id === itemId);
+ if (idx < 0)
+ return;
+ const newArr = [...arr];
+ newArr[idx] = { ...newArr[idx], ...patch };
+ updateField(type, newArr);
+}
+function selectItem(type, itemId) {
+ if (props.readOnly)
+ return;
+ emit('select-item', { type, id: itemId });
+}
+function startDrag(e, type, itemId) {
+ if (props.readOnly)
+ return;
+ e.stopPropagation();
+ const canvasRect = canvasRef.value.getBoundingClientRect();
+ const arr = props.modelValue[type];
+ const item = arr.find(i => i.id === itemId);
+ if (!item)
+ return;
+ dragState.value = {
+ type,
+ itemId,
+ offsetX: e.clientX - canvasRect.left - item.x,
+ offsetY: e.clientY - canvasRect.top - item.y,
+ canvasRect
+ };
+ selectItem(type, itemId);
+ document.addEventListener('mousemove', onDrag);
+ document.addEventListener('mouseup', stopDrag);
+}
+function onDrag(e) {
+ if (!dragState.value)
+ return;
+ const { type, itemId, offsetX, offsetY, canvasRect } = dragState.value;
+ let nx = e.clientX - canvasRect.left - offsetX;
+ let ny = e.clientY - canvasRect.top - offsetY;
+ nx = Math.max(-20, Math.min(canvasRect.width - 20, nx));
+ ny = Math.max(-20, Math.min(canvasRect.height - 20, ny));
+ updateItem(type, itemId, { x: Math.round(nx), y: Math.round(ny) });
+}
+function stopDrag() {
+ dragState.value = null;
+ document.removeEventListener('mousemove', onDrag);
+ document.removeEventListener('mouseup', stopDrag);
+}
+function startResize(e, type, itemId) {
+ if (props.readOnly)
+ return;
+ e.stopPropagation();
+ e.preventDefault();
+ const canvasRect = canvasRef.value.getBoundingClientRect();
+ const arr = props.modelValue[type];
+ const item = arr.find(i => i.id === itemId);
+ if (!item)
+ return;
+ const startX = e.clientX;
+ const startY = e.clientY;
+ const startW = item.width;
+ const startH = item.height || 100;
+ resizing.value = { type, itemId, startX, startY, startW, startH, canvasRect };
+ selectItem(type, itemId);
+ document.addEventListener('mousemove', onResize);
+ document.addEventListener('mouseup', stopResize);
+}
+function onResize(e) {
+ if (!resizing.value)
+ return;
+ const { type, itemId, startX, startY, startW, startH } = resizing.value;
+ const dx = e.clientX - startX;
+ const dy = e.clientY - startY;
+ const ratio = startH / startW;
+ let nw = Math.max(60, startW + dx);
+ let nh = type === 'texts' ? null : Math.max(40, startH + dy);
+ if (type === 'photos' && e.shiftKey) {
+ nh = Math.round(nw * ratio);
+ }
+ const patch = { width: Math.round(nw) };
+ if (nh !== null)
+ patch.height = Math.round(nh);
+ updateItem(type, itemId, patch);
+}
+function stopResize() {
+ resizing.value = null;
+ document.removeEventListener('mousemove', onResize);
+ document.removeEventListener('mouseup', stopResize);
+}
+function stampBox(scale = 1) {
+ return { w: 90 * scale, h: 110 * scale };
+}
+function pmBox(scale = 1) {
+ return { w: 140 * scale, h: 140 * scale };
+}
+defineExpose({ canvasRef });
+</script>
+
+<template>
+  <div class="flex justify-center items-start p-6">
+    <div
+      ref="canvasRef"
+      class="relative shadow-vintage select-none"
+      :style="{
+        width: '540px',
+        height: '720px',
+        ...paperObj.style
+      }"
+      @click="selectItem(null, null)"
+    >
+      <div
+        v-for="txt in modelValue.texts"
+        :key="txt.id"
+        class="absolute cursor-move group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :style="{
+          left: txt.x + 'px',
+          top: txt.y + 'px',
+          width: txt.width + 'px',
+          minHeight: '40px'
+        }"
+        @mousedown="startDrag($event, 'texts', txt.id)"
+        @click.stop="selectItem('texts', txt.id)"
+      >
+        <div
+          :style="{
+            fontFamily: getFont(txt.fontId).family,
+            fontSize: txt.fontSize + 'px',
+            color: txt.color,
+            textAlign: txt.align || 'left',
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word'
+          }"
+          class="w-full"
+        >{{ txt.content || '（空文字）' }}</div>
+        <div
+          v-if="!readOnly"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          @mousedown="startResize($event, 'texts', txt.id)"
+        ></div>
+      </div>
+
+      <div
+        v-for="ph in modelValue.photos"
+        :key="ph.id"
+        class="absolute cursor-move group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :style="{
+          left: ph.x + 'px',
+          top: ph.y + 'px',
+          width: ph.width + 'px',
+          height: ph.height + 'px'
+        }"
+        @mousedown="startDrag($event, 'photos', ph.id)"
+        @click.stop="selectItem('photos', ph.id)"
+      >
+        <div
+          class="w-full h-full overflow-hidden"
+          :class="[ph.border ? 'border-[6px] border-kraft-50 shadow-stamp' : '']"
+          :style="{ backgroundColor: ph.src ? 'transparent' : '#dcb573' }"
+        >
+          <img
+            v-if="ph.src"
+            :src="ph.src"
+            class="w-full h-full object-cover"
+            alt="photo"
+            draggable="false"
+          />
+          <div v-else class="w-full h-full flex flex-col items-center justify-center text-kraft-700 gap-1">
+            <span class="text-4xl">🖼️</span>
+            <span class="text-xs font-serif-sc">点击插入照片</span>
+          </div>
+        </div>
+        <div
+          v-if="!readOnly"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          @mousedown="startResize($event, 'photos', ph.id)"
+        ></div>
+      </div>
+
+      <div
+        v-for="ins in modelValue.stamps"
+        :key="ins.id"
+        class="absolute cursor-move group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :style="{
+          left: ins.x + 'px',
+          top: ins.y + 'px',
+          width: stampBox(ins.scale).w + 'px',
+          height: stampBox(ins.scale).h + 'px'
+        }"
+        @mousedown="startDrag($event, 'stamps', ins.id)"
+        @click.stop="selectItem('stamps', ins.id)"
+      >
+        <template v-if="getStamp(ins.stampId)">
+          <div
+            class="stamp-perforation w-full h-full shadow-stamp flex flex-col items-center justify-center p-2"
+            :style="{ backgroundColor: getStamp(ins.stampId).bg }"
+          >
+            <div class="text-4xl mb-1">{{ getStamp(ins.stampId).emoji }}</div>
+            <div
+              class="text-[10px] font-serif-sc font-bold uppercase tracking-wider leading-tight text-center"
+              :style="{ color: getStamp(ins.stampId).color }"
+            >
+              {{ getStamp(ins.stampId).name }}
+            </div>
+            <div
+              class="mt-1 px-1.5 py-0.5 border text-[10px] font-serif-sc font-bold"
+              :style="{ borderColor: getStamp(ins.stampId).color, color: getStamp(ins.stampId).color }"
+            >
+              ¥{{ getStamp(ins.stampId).value }}
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div
+        v-for="ins in modelValue.postmarks"
+        :key="ins.id"
+        class="absolute cursor-move pointer-events-auto group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :style="{
+          left: ins.x + 'px',
+          top: ins.y + 'px',
+          width: pmBox(ins.scale).w + 'px',
+          height: pmBox(ins.scale).h + 'px'
+        }"
+        @mousedown="startDrag($event, 'postmarks', ins.id)"
+        @click.stop="selectItem('postmarks', ins.id)"
+      >
+        <template v-if="getPostmark(ins.postmarkId)">
+          <svg
+            viewBox="0 0 140 140"
+            class="w-full h-full"
+            :style="{ transform: `rotate(${getPostmark(ins.postmarkId).rotation}deg)` }"
+          >
+            <circle cx="70" cy="70" r="64" fill="none" :stroke="getPostmark(ins.postmarkId).color" stroke-width="2" stroke-dasharray="4 3" opacity="0.85"/>
+            <circle cx="70" cy="70" r="52" fill="none" :stroke="getPostmark(ins.postmarkId).color" stroke-width="1" opacity="0.6"/>
+            <circle cx="70" cy="70" r="36" fill="none" :stroke="getPostmark(ins.postmarkId).color" stroke-width="1" opacity="0.6"/>
+            <text
+              x="70" y="40"
+              text-anchor="middle"
+              :fill="getPostmark(ins.postmarkId).color"
+              font-family="'Playfair Display', serif"
+              font-size="11"
+              font-weight="700"
+              letter-spacing="2"
+              opacity="0.9"
+            >{{ getPostmark(ins.postmarkId).location }}</text>
+            <line x1="24" y1="55" x2="116" y2="55" :stroke="getPostmark(ins.postmarkId).color" stroke-width="1" opacity="0.5"/>
+            <line x1="24" y1="85" x2="116" y2="85" :stroke="getPostmark(ins.postmarkId).color" stroke-width="1" opacity="0.5"/>
+            <text
+              x="70" y="74"
+              text-anchor="middle"
+              :fill="getPostmark(ins.postmarkId).color"
+              font-family="'Playfair Display', serif"
+              font-size="10"
+              font-weight="600"
+              letter-spacing="1.5"
+              opacity="0.9"
+            >{{ getPostmark(ins.postmarkId).date }}</text>
+            <text
+              x="70" y="108"
+              text-anchor="middle"
+              :fill="getPostmark(ins.postmarkId).color"
+              font-family="'Caveat', cursive"
+              font-size="13"
+              font-weight="600"
+              opacity="0.85"
+            >PAR AVION</text>
+            <line x1="42" y1="118" x2="98" y2="118" :stroke="getPostmark(ins.postmarkId).color" stroke-width="0.8" opacity="0.4"/>
+          </svg>
+        </template>
+      </div>
+
+      <div v-if="readOnly" class="absolute inset-0 pointer-events-none"></div>
+    </div>
+  </div>
+</template>
