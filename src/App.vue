@@ -79,7 +79,8 @@ function addText() {
  fontSize: 22,
  fontId: 'f1',
  color: '#0f1e3d',
- align: 'left'
+ align: 'left',
+ rotation: 0
  };
  postcard.texts.push(t);
  selectedItem.value = { type: 'texts', id: t.id };
@@ -91,7 +92,8 @@ function addPhoto() {
  src: '',
  x: 170, y: 260 + postcard.photos.length * 30,
  width: 200, height: 150,
- border: true
+ border: true,
+ rotation: 0
  };
  postcard.photos.push(ph);
  selectedItem.value = { type: 'photos', id: ph.id };
@@ -105,7 +107,8 @@ function addStamp() {
  stampId: chosen.id,
  x: 430 - postcard.stamps.length * 10,
  y: 30 + postcard.stamps.length * 115,
- scale: 1
+ scale: 1,
+ rotation: 0
  };
  postcard.stamps.push(s);
  selectedItem.value = { type: 'stamps', id: s.id };
@@ -119,7 +122,8 @@ function addPostmark() {
  postmarkId: chosen.id,
  x: 390 - postcard.postmarks.length * 15,
  y: 110 + postcard.postmarks.length * 30,
- scale: 1
+ scale: 1,
+ rotation: 0
  };
  postcard.postmarks.push(p);
  selectedItem.value = { type: 'postmarks', id: p.id };
@@ -347,6 +351,7 @@ onUnmounted(() => {
           <PostcardCanvas
             ref="canvasComp"
             :model-value="postcard"
+            :selected="selectedItem"
             @update:model-value="updatePostcard"
             @select-item="selectItemHandler"
           />

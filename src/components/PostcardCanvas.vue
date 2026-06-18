@@ -2,12 +2,14 @@
 import { papers, stamps, postmarks, fonts } from '@/data/assets.js';
 const props = defineProps({
  modelValue: { type: Object, required: true },
+ selected: { type: Object, default: null },
  readOnly: { type: Boolean, default: false }
 });
 const emit = defineEmits(['update:modelValue', 'select-item']);
 const canvasRef = ref(null);
 const dragState = ref(null);
 const resizing = ref(null);
+const rotating = ref(null);
 const paperObj = computed(() => papers.find(p => p.id === props.modelValue.paperId) || papers[0]);
 function getFont(fontId) {
  return fonts.find(f => f.id === fontId) || fonts[0];
@@ -17,6 +19,23 @@ function getStamp(stampId) {
 }
 function getPostmark(pmId) {
  return postmarks.find(p => p.id === pmId);
+}
+function isSelected(type, id) {
+ return props.selected && props.selected.type === type && props.selected.id === id;
+}
+function getItemSize(type, item) {
+ switch (type) {
+ case 'texts':
+ return { w: item.width, h: 100 };
+ case 'photos':
+ return { w: item.width, h: item.height };
+ case 'stamps':
+ return { w: 90 * (item.scale || 1), h: 110 * (item.scale || 1) };
+ case 'postmarks':
+ return { w: 140 * (item.scale || 1), h: 140 * (item.scale || 1) };
+ default:
+ return { w: 100, h: 100 };
+ }
 }
 function updateField(key, value) {
  emit('update:modelValue', { ...props.modelValue, [key]: value });
@@ -111,6 +130,46 @@ function stopResize() {
  document.removeEventListener('mousemove', onResize);
  document.removeEventListener('mouseup', stopResize);
 }
+function startRotate(e, type, itemId) {
+ if (props.readOnly)
+ return;
+ e.stopPropagation();
+ e.preventDefault();
+ const canvasRect = canvasRef.value.getBoundingClientRect();
+ const arr = props.modelValue[type];
+ const item = arr.find(i => i.id === itemId);
+ if (!item)
+ return;
+ const size = getItemSize(type, item);
+ const centerX = canvasRect.left + item.x + size.w / 2;
+ const centerY = canvasRect.top + item.y + size.h / 2;
+ const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+ const startRotation = item.rotation || 0;
+ rotating.value = { type, itemId, centerX, centerY, startAngle, startRotation };
+ selectItem(type, itemId);
+ document.addEventListener('mousemove', onRotate);
+ document.addEventListener('mouseup', stopRotate);
+}
+function onRotate(e) {
+ if (!rotating.value)
+ return;
+ const { type, itemId, centerX, centerY, startAngle, startRotation } = rotating.value;
+ let currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+ let delta = currentAngle - startAngle;
+ let newRotation = startRotation + delta;
+ if (e.shiftKey) {
+ newRotation = Math.round(newRotation / 15) * 15;
+ }
+ newRotation = ((newRotation % 360) + 360) % 360;
+ if (newRotation > 180)
+ newRotation -= 360;
+ updateItem(type, itemId, { rotation: Math.round(newRotation * 100) / 100 });
+}
+function stopRotate() {
+ rotating.value = null;
+ document.removeEventListener('mousemove', onRotate);
+ document.removeEventListener('mouseup', stopRotate);
+}
 function stampBox(scale = 1) {
  return { w: 90 * scale, h: 110 * scale };
 }
@@ -136,12 +195,14 @@ defineExpose({ canvasRef });
         v-for="txt in modelValue.texts"
         :key="txt.id"
         class="absolute cursor-move group"
-        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('texts', txt.id) }"
         :style="{
           left: txt.x + 'px',
           top: txt.y + 'px',
           width: txt.width + 'px',
-          minHeight: '40px'
+          minHeight: '40px',
+          transform: `rotate(${txt.rotation || 0}deg)`,
+          transformOrigin: 'center center'
         }"
         @mousedown="startDrag($event, 'texts', txt.id)"
         @click.stop="selectItem('texts', txt.id)"
@@ -159,8 +220,19 @@ defineExpose({ canvasRef });
           class="w-full"
         >{{ txt.content || '（空文字）' }}</div>
         <div
-          v-if="!readOnly"
-          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          v-if="!readOnly && isSelected('texts', txt.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'texts', txt.id)"
+          ></div>
+        </div>
+        <div
+          v-if="!readOnly && isSelected('texts', txt.id)"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm z-10"
           @mousedown="startResize($event, 'texts', txt.id)"
         ></div>
       </div>
@@ -169,12 +241,14 @@ defineExpose({ canvasRef });
         v-for="ph in modelValue.photos"
         :key="ph.id"
         class="absolute cursor-move group"
-        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('photos', ph.id) }"
         :style="{
           left: ph.x + 'px',
           top: ph.y + 'px',
           width: ph.width + 'px',
-          height: ph.height + 'px'
+          height: ph.height + 'px',
+          transform: `rotate(${ph.rotation || 0}deg)`,
+          transformOrigin: 'center center'
         }"
         @mousedown="startDrag($event, 'photos', ph.id)"
         @click.stop="selectItem('photos', ph.id)"
@@ -197,8 +271,19 @@ defineExpose({ canvasRef });
           </div>
         </div>
         <div
-          v-if="!readOnly"
-          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          v-if="!readOnly && isSelected('photos', ph.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'photos', ph.id)"
+          ></div>
+        </div>
+        <div
+          v-if="!readOnly && isSelected('photos', ph.id)"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm z-10"
           @mousedown="startResize($event, 'photos', ph.id)"
         ></div>
       </div>
@@ -207,12 +292,14 @@ defineExpose({ canvasRef });
         v-for="ins in modelValue.stamps"
         :key="ins.id"
         class="absolute cursor-move group"
-        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('stamps', ins.id) }"
         :style="{
           left: ins.x + 'px',
           top: ins.y + 'px',
           width: stampBox(ins.scale).w + 'px',
-          height: stampBox(ins.scale).h + 'px'
+          height: stampBox(ins.scale).h + 'px',
+          transform: `rotate(${ins.rotation || 0}deg)`,
+          transformOrigin: 'center center'
         }"
         @mousedown="startDrag($event, 'stamps', ins.id)"
         @click.stop="selectItem('stamps', ins.id)"
@@ -237,18 +324,31 @@ defineExpose({ canvasRef });
             </div>
           </div>
         </template>
+        <div
+          v-if="!readOnly && isSelected('stamps', ins.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'stamps', ins.id)"
+          ></div>
+        </div>
       </div>
 
       <div
         v-for="ins in modelValue.postmarks"
         :key="ins.id"
         class="absolute cursor-move pointer-events-auto group"
-        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly }"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('postmarks', ins.id) }"
         :style="{
           left: ins.x + 'px',
           top: ins.y + 'px',
           width: pmBox(ins.scale).w + 'px',
-          height: pmBox(ins.scale).h + 'px'
+          height: pmBox(ins.scale).h + 'px',
+          transform: `rotate(${ins.rotation || 0}deg)`,
+          transformOrigin: 'center center'
         }"
         @mousedown="startDrag($event, 'postmarks', ins.id)"
         @click.stop="selectItem('postmarks', ins.id)"
@@ -296,6 +396,17 @@ defineExpose({ canvasRef });
             <line x1="42" y1="118" x2="98" y2="118" :stroke="getPostmark(ins.postmarkId).color" stroke-width="0.8" opacity="0.4"/>
           </svg>
         </template>
+        <div
+          v-if="!readOnly && isSelected('postmarks', ins.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'postmarks', ins.id)"
+          ></div>
+        </div>
       </div>
 
       <div v-if="readOnly" class="absolute inset-0 pointer-events-none"></div>

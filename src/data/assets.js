@@ -75,35 +75,35 @@ export const defaultTemplates = [
     id: 'tpl1', name: '旅行记忆',
     paperId: 'p1',
     texts: [
-      { id: 'tx1', content: '来自远方的思念', x: 50, y: 60, width: 440, fontSize: 36, fontId: 'f5', color: '#1a2c52', align: 'center' },
-      { id: 'tx2', content: '亲爱的朋友：\n\n这一路风景如画，山川湖海皆入眼帘。每当夜深人静，便想起与你共度的时光。愿这张明信片，能将此刻的美好与你共享。\n\n盼望早日重逢。\n\n—— 旅人 敬上', x: 50, y: 150, width: 440, fontSize: 20, fontId: 'f2', color: '#0f1e3d', align: 'left' }
+      { id: 'tx1', content: '来自远方的思念', x: 50, y: 60, width: 440, fontSize: 36, fontId: 'f5', color: '#1a2c52', align: 'center', rotation: 0 },
+      { id: 'tx2', content: '亲爱的朋友：\n\n这一路风景如画，山川湖海皆入眼帘。每当夜深人静，便想起与你共度的时光。愿这张明信片，能将此刻的美好与你共享。\n\n盼望早日重逢。\n\n—— 旅人 敬上', x: 50, y: 150, width: 440, fontSize: 20, fontId: 'f2', color: '#0f1e3d', align: 'left', rotation: 0 }
     ],
     photos: [
-      { id: 'ph1', src: '', x: 50, y: 380, width: 200, height: 150, border: true }
+      { id: 'ph1', src: '', x: 50, y: 380, width: 200, height: 150, border: true, rotation: 0 }
     ],
-    stamps: [{ id: 'st1', stampId: 's7', x: 430, y: 30, scale: 1 }],
-    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm4', x: 400, y: 110, scale: 1 }]
+    stamps: [{ id: 'st1', stampId: 's7', x: 430, y: 30, scale: 1, rotation: 0 }],
+    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm4', x: 400, y: 110, scale: 1, rotation: 0 }]
   },
   {
     id: 'tpl2', name: '复古情书',
     paperId: 'p5',
     texts: [
-      { id: 'tx1', content: 'My Dearest,', x: 60, y: 50, width: 420, fontSize: 42, fontId: 'f4', color: '#7f1d1d', align: 'left' },
-      { id: 'tx2', content: 'Words cannot express how much I miss you. Each day without you feels like an eternity. I count the moments until we meet again.\n\nForever yours,\n❤️', x: 60, y: 140, width: 420, fontSize: 22, fontId: 'f3', color: '#5c3423', align: 'left' }
+      { id: 'tx1', content: 'My Dearest,', x: 60, y: 50, width: 420, fontSize: 42, fontId: 'f4', color: '#7f1d1d', align: 'left', rotation: 0 },
+      { id: 'tx2', content: 'Words cannot express how much I miss you. Each day without you feels like an eternity. I count the moments until we meet again.\n\nForever yours,\n❤️', x: 60, y: 140, width: 420, fontSize: 22, fontId: 'f3', color: '#5c3423', align: 'left', rotation: 0 }
     ],
     photos: [],
-    stamps: [{ id: 'st1', stampId: 's3', x: 430, y: 30, scale: 1 }],
-    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm2', x: 400, y: 100, scale: 1 }]
+    stamps: [{ id: 'st1', stampId: 's3', x: 430, y: 30, scale: 1, rotation: 0 }],
+    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm2', x: 400, y: 100, scale: 1, rotation: 0 }]
   },
   {
     id: 'tpl3', name: '节日贺卡',
     paperId: 'p6',
     texts: [
-      { id: 'tx1', content: '恭贺新禧', x: 50, y: 80, width: 440, fontSize: 56, fontId: 'f5', color: '#ffd700', align: 'center' },
-      { id: 'tx2', content: '愿新的一年\n平安喜乐 · 万事如意', x: 50, y: 220, width: 440, fontSize: 28, fontId: 'f8', color: '#fef2f2', align: 'center' }
+      { id: 'tx1', content: '恭贺新禧', x: 50, y: 80, width: 440, fontSize: 56, fontId: 'f5', color: '#ffd700', align: 'center', rotation: 0 },
+      { id: 'tx2', content: '愿新的一年\n平安喜乐 · 万事如意', x: 50, y: 220, width: 440, fontSize: 28, fontId: 'f8', color: '#fef2f2', align: 'center', rotation: 0 }
     ],
     photos: [],
-    stamps: [{ id: 'st1', stampId: 's11', x: 430, y: 30, scale: 1 }],
-    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm5', x: 400, y: 110, scale: 1 }]
+    stamps: [{ id: 'st1', stampId: 's11', x: 430, y: 30, scale: 1, rotation: 0 }],
+    postmarks: [{ id: 'pm_ins1', postmarkId: 'pm5', x: 400, y: 110, scale: 1, rotation: 0 }]
   }
 ]

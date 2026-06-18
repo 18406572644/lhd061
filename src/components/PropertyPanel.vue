@@ -60,6 +60,7 @@ const aligns = [
   { v: 'center', icon: '⬌' },
   { v: 'right', icon: '➡' }
 ]
+const rotationPresets = [0, 90, 180, 270]
 </script>
 
 <template>
@@ -111,6 +112,32 @@ const aligns = [
             <input type="number" class="input-field !py-1 !text-sm"
               :value="selectedItem.y"
               @input="updateItem(selected.type, selected.id, { y: +$event.target.value || 0 })" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-navy-700 font-serif-sc mb-1 text-xs">旋转角度 ({{ selectedItem.rotation || 0 }}°)</label>
+          <div class="flex gap-2 items-center">
+            <input
+              type="number"
+              class="input-field !py-1 !text-sm flex-1"
+              :value="selectedItem.rotation || 0"
+              min="-180"
+              max="180"
+              step="1"
+              @input="updateItem(selected.type, selected.id, { rotation: +$event.target.value || 0 })"
+            />
+            <span class="text-navy-600 font-serif-sc text-sm">°</span>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button
+              v-for="deg in rotationPresets" :key="deg"
+              class="flex-1 py-1 rounded-sm border-2 transition-all text-xs font-serif-sc"
+              :class="(selectedItem.rotation || 0) === deg ? 'bg-navy-800 text-kraft-50 border-navy-900' : 'bg-kraft-100 text-navy-800 border-kraft-400 hover:border-navy-500'"
+              @click="updateItem(selected.type, selected.id, { rotation: deg })"
+            >
+              {{ deg }}°
+            </button>
           </div>
         </div>
 
