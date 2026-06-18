@@ -4,11 +4,16 @@ import PropertyPanel from '@/components/PropertyPanel.vue';
 import TemplatePanel from '@/components/TemplatePanel.vue';
 import Postcard3D from '@/components/Postcard3D.vue';
 import BackEditor from '@/components/BackEditor.vue';
+import MusicSelector from '@/components/MusicSelector.vue';
 import { mockApi } from '@/api/mockApi.js';
 import { defaultTemplates, stamps, postmarks } from '@/data/assets.js';
+import { useQRCode } from '@/composables/useQRCode.js';
+import { useIndexedDB } from '@/composables/useIndexedDB.js';
 import html2canvas from 'html2canvas';
 import { useHistory } from '@/composables/useHistory.js';
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: historyInit } = useHistory();
+const { generateQRCodeDataUrl, generateQRCodeSVG } = useQRCode();
+const { init: initDB, getAudioUrl } = useIndexedDB();
 const canvasComp = ref(null);
 const card3DRef = ref(null);
 const templatePanelRef = ref(null);
@@ -18,6 +23,10 @@ let pushDebounceTimer = null;
 const is3DMode = ref(false);
 const rightPanelTab = ref('property');
 const showExportDialog = ref(false);
+const showMusicSelector = ref(false);
+const showQRCodeDialog = ref(false);
+const qrCodeDataUrl = ref('');
+const qrCodeText = ref('');
 function createEmpty() {
  return {
  id: '',
@@ -26,7 +35,9 @@ function createEmpty() {
  texts: [],
  photos: [],
  stamps: [],
- postmarks: []
+ postmarks: [],
+ audios: [],
+ qrcodes: []
  };
 }
 function createEmptyBack() {
@@ -217,6 +228,97 @@ function addPostmark() {
  historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已添加邮戳「' + chosen.name + '」', 'info');
 }
+function addMusic() {
+ showMusicSelector.value = true;
+}
+function handleSelectMusic(musicData) {
+ const audio = {
+ id: 'au_' + uid(),
+ ...musicData,
+ x: 80,
+ y: 500 + postcard.audios.length * 50,
+ width: 100,
+ height: 100,
+ iconType: 'record',
+ rotation: 0,
+ scale: 1
+ };
+ postcard.audios.push(audio);
+ selectedItem.value = { type: 'audios', id: audio.id };
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+ showToast('🎵 已添加背景音乐「' + musicData.name + '」', 'info');
+}
+function handleSelectVoice(voiceData) {
+ const audio = {
+ id: 'au_' + uid(),
+ ...voiceData,
+ x: 80,
+ y: 500 + postcard.audios.length * 50,
+ width: 100,
+ height: 100,
+ iconType: 'tape',
+ rotation: 0,
+ scale: 1,
+ color: '#7f1d1d',
+ bgColor: '#fee2e2'
+ };
+ postcard.audios.push(audio);
+ selectedItem.value = { type: 'audios', id: audio.id };
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+ showToast('🎤 已添加语音留言', 'success');
+}
+function addQRCode() {
+ showQRCodeDialog.value = true;
+ qrCodeText.value = '';
+ qrCodeDataUrl.value = '';
+}
+function generateQRCodeForVoice(audioItem) {
+ if (!audioItem) {
+ showToast('请先选择一个语音留言', 'error');
+ return;
+ }
+ const text = `https://postcard-audio.example.com/listen/${audioItem.voiceId || audioItem.id}`;
+ const dataUrl = generateQRCodeDataUrl(text, 120);
+ const qr = {
+ id: 'qr_' + uid(),
+ text,
+ dataUrl,
+ x: 380,
+ y: 550 + postcard.qrcodes.length * 40,
+ width: 80,
+ height: 80,
+ rotation: 0,
+ title: '扫码收听语音',
+ audioId: audioItem.id
+ };
+ postcard.qrcodes.push(qr);
+ selectedItem.value = { type: 'qrcodes', id: qr.id };
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+ showToast('📱 已添加二维码，扫码可收听语音', 'success');
+}
+function confirmQRCode() {
+ if (!qrCodeText.value.trim()) {
+ showToast('请输入二维码内容', 'error');
+ return;
+ }
+ const dataUrl = generateQRCodeDataUrl(qrCodeText.value, 120);
+ const qr = {
+ id: 'qr_' + uid(),
+ text: qrCodeText.value,
+ dataUrl,
+ x: 380,
+ y: 550 + postcard.qrcodes.length * 40,
+ width: 80,
+ height: 80,
+ rotation: 0,
+ title: ''
+ };
+ postcard.qrcodes.push(qr);
+ selectedItem.value = { type: 'qrcodes', id: qr.id };
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+ showToast('📱 已添加二维码', 'success');
+ showQRCodeDialog.value = false;
+}
 function resetCanvas() {
  if (!confirm('确定要清空画布并重新开始吗？'))
  return;
@@ -298,6 +400,11 @@ async function doExport(type) {
  showToast('🎬 正在录制翻页动画，请稍候...', 'info');
  showExportDialog.value = false;
  await exportFlipAnimation();
+ return;
+ }
+ if (type === 'mp4') {
+ showExportDialog.value = false;
+ await exportMP4();
  return;
  }
  showExportDialog.value = false;
@@ -454,6 +561,136 @@ async function exportFlipAnimation() {
  document.body.removeChild(link);
  setTimeout(() => URL.revokeObjectURL(url), 5000);
  showToast('🎉 3D 翻页动画导出成功！', 'success');
+ }
+ catch (e) {
+ console.error(e);
+ showToast('导出失败：' + e.message, 'error');
+ }
+ finally {
+ exporting.value = false;
+ exportingType.value = '';
+ }
+}
+async function exportMP4() {
+ if (postcard.audios.length === 0) {
+ showToast('请先添加音乐或语音留言', 'error');
+ return;
+ }
+ exporting.value = true;
+ exportingType.value = 'mp4';
+ try {
+ showToast('🎵 正在生成带音乐的 MP4 视频，请稍候...', 'info');
+ const prevSel = selectedItem.value;
+ selectedItem.value = null;
+ await nextTick();
+ await new Promise(r => setTimeout(r, 200));
+ let targetEl = canvasComp.value?.canvasRef;
+ if (is3DMode.value) {
+ targetEl = card3DRef.value?.frontCanvasRef;
+ }
+ if (!targetEl) {
+ showToast('导出元素未找到', 'error');
+ return;
+ }
+ const canvas = await html2canvas(targetEl, {
+ scale: 2,
+ useCORS: true,
+ allowTaint: true,
+ backgroundColor: null,
+ logging: false,
+ imageTimeout: 15000
+ });
+ const audioItem = postcard.audios[0];
+ let audioUrl = audioItem.url;
+ if (audioItem.type === 'voice' && audioItem.voiceId) {
+ audioUrl = await getAudioUrl(audioItem.voiceId);
+ }
+ if (!audioUrl) {
+ showToast('音频加载失败', 'error');
+ return;
+ }
+ const audio = new Audio(audioUrl);
+ await new Promise((resolve, reject) => {
+ audio.onloadedmetadata = resolve;
+ audio.onerror = reject;
+ });
+ const videoDuration = Math.min(audio.duration, 60);
+ const videoCanvas = document.createElement('canvas');
+ videoCanvas.width = canvas.width;
+ videoCanvas.height = canvas.height;
+ const vctx = videoCanvas.getContext('2d');
+ const fps = 30;
+ const totalFrames = Math.floor(videoDuration * fps);
+ const stream = videoCanvas.captureStream(fps);
+ const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+ const audioSource = audioContext.createMediaElementSource(audio);
+ const audioDestination = audioContext.createMediaStreamDestination();
+ audioSource.connect(audioDestination);
+ audioSource.connect(audioContext.destination);
+ const combinedStream = new MediaStream([
+ ...stream.getVideoTracks(),
+ ...audioDestination.stream.getAudioTracks()
+ ]);
+ const mimeTypes = [
+ 'video/webm;codecs=vp9,opus',
+ 'video/webm;codecs=vp8,opus',
+ 'video/webm'
+ ];
+ let mimeType = '';
+ for (const type of mimeTypes) {
+ if (MediaRecorder.isTypeSupported(type)) {
+ mimeType = type;
+ break;
+ }
+ }
+ if (!mimeType) {
+ throw new Error('当前浏览器不支持视频录制');
+ }
+ const mediaRecorder = new MediaRecorder(combinedStream, {
+ mimeType,
+ videoBitsPerSecond: 5000000
+ });
+ const chunks = [];
+ mediaRecorder.ondataavailable = (e) => {
+ if (e.data.size > 0) {
+ chunks.push(e.data);
+ }
+ };
+ await new Promise((resolve) => {
+ mediaRecorder.onstop = resolve;
+ mediaRecorder.start();
+ audio.currentTime = 0;
+ audio.play();
+ let frameCount = 0;
+ function drawFrame() {
+ if (frameCount >= totalFrames || !exporting.value) {
+ mediaRecorder.stop();
+ audio.pause();
+ audio.currentTime = 0;
+ return;
+ }
+ vctx.drawImage(canvas, 0, 0);
+ const time = (frameCount / fps).toFixed(2);
+ vctx.font = 'bold 24px serif';
+ vctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+ vctx.fillText('🎵 Vintage Postcard', 20, 40);
+ frameCount++;
+ requestAnimationFrame(drawFrame);
+ }
+ drawFrame();
+ });
+ const blob = new Blob(chunks, { type: mimeType });
+ const url = URL.createObjectURL(blob);
+ const link = document.createElement('a');
+ const ext = mimeType.includes('webm') ? 'webm' : 'mp4';
+ link.download = `postcard_${nameInput.value || 'vintage'}_带音乐_${Date.now()}.${ext}`;
+ link.href = url;
+ document.body.appendChild(link);
+ link.click();
+ document.body.removeChild(link);
+ setTimeout(() => URL.revokeObjectURL(url), 5000);
+ selectedItem.value = prevSel;
+ showToast(`🎉 带音乐的 ${ext.toUpperCase()} 视频导出成功！`, 'success');
  }
  catch (e) {
  console.error(e);
@@ -670,7 +907,9 @@ async function restoreSnapshot(snapshot) {
  texts: snapshot.texts || [],
  photos: snapshot.photos || [],
  stamps: snapshot.stamps || [],
- postmarks: snapshot.postmarks || []
+ postmarks: snapshot.postmarks || [],
+ audios: snapshot.audios || [],
+ qrcodes: snapshot.qrcodes || []
  });
  if (snapshot.backContent) {
  Object.assign(backContent, snapshot.backContent);
@@ -693,11 +932,12 @@ function toggle3DMode() {
  showToast(is3DMode.value ? '🎬 已进入 3D 预览模式，拖拽可旋转查看' : '✏️ 已返回编辑模式', 'info');
 }
 watch([() => postcard.paperId, () => postcard.texts, () => postcard.photos, () => postcard.stamps, () => postcard.postmarks,
- () => backContent, nameInput], () => {
+ () => postcard.audios, () => postcard.qrcodes, () => backContent, nameInput], () => {
  autoSaveDraft();
 }, { deep: true });
 onMounted(async () => {
  document.addEventListener('keydown', handleKeydown);
+ await initDB();
  const draftRes = await mockApi.getDraft();
  hasDraft.value = !!(draftRes.code === 200 && draftRes.data);
  applyTemplate(defaultTemplates[0], true);
@@ -758,6 +998,9 @@ onUnmounted(() => {
             title="重做 (Ctrl+Y)"
           >
             ↪️ 重做
+          </button>
+          <button class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap" @click="addMusic">
+            🎵 添加音乐
           </button>
           <button class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap" @click="resetCanvas">
             🆕 新建
@@ -874,6 +1117,9 @@ onUnmounted(() => {
           @add-photo="addPhoto"
           @add-stamp="addStamp"
           @add-postmark="addPostmark"
+          @add-music="addMusic"
+          @add-qrcode="addQRCode"
+          @generate-qr-for-voice="generateQRCodeForVoice"
         />
         <BackEditor
           v-show="rightPanelTab === 'back'"
@@ -987,6 +1233,28 @@ onUnmounted(() => {
                   <div class="text-kraft-600 text-xs">导出带立体翻页效果的动态 GIF 动画，约 48 帧循环播放</div>
                 </div>
               </button>
+
+              <div class="border-t-2 border-dashed border-kraft-300 my-4"></div>
+
+              <button
+                class="w-full py-4 px-4 rounded-sm border-2 transition-all flex items-center gap-4 text-left group relative overflow-hidden"
+                :class="postcard.audios.length === 0 || exporting ? 'opacity-50 cursor-not-allowed border-kraft-400' : 'border-purple-500 bg-gradient-to-r from-purple-50 to-kraft-50 hover:from-purple-100 hover:to-purple-50'"
+                :disabled="postcard.audios.length === 0 || exporting"
+                @click="doExport('mp4')"
+              >
+                <div class="w-16 h-12 rounded-sm border-2 border-purple-600 bg-gradient-to-br from-purple-200 via-purple-300 to-purple-400 flex items-center justify-center text-2xl shadow-md group-hover:scale-105 transition-transform relative">
+                  🎵
+                  <span class="absolute -bottom-1 -right-1 text-[10px] bg-purple-600 text-kraft-50 px-1 rounded-sm" v-if="postcard.audios.length === 0">需音频</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-serif-sc text-navy-900 font-bold text-base flex items-center gap-2">
+                    <span class="text-purple-700">★</span>
+                    带音乐的 MP4 视频
+                    <span v-if="postcard.audios.length === 0" class="text-[10px] bg-kraft-200 text-kraft-600 px-2 py-0.5 rounded-sm">请先添加音乐</span>
+                  </div>
+                  <div class="text-kraft-600 text-xs">导出包含背景音乐/语音留言的 MP4 视频，可在任意播放器播放</div>
+                </div>
+              </button>
             </div>
             <div class="bg-kraft-100 px-6 py-3 border-t-2 border-kraft-300 flex justify-end">
               <button
@@ -1008,12 +1276,77 @@ onUnmounted(() => {
           <div class="w-16 h-16 border-4 border-navy-800 border-t-transparent rounded-full animate-spin"></div>
           <div class="text-center">
             <div class="font-playfair text-lg font-bold text-navy-900 tracking-wider">
-              {{ exportingType === '3d_gif' ? '🎬 正在生成 3D 翻页动画...' : '📸 正在生成高清图片...' }}
+              {{ exportingType === '3d_gif' ? '🎬 正在生成 3D 翻页动画...' : exportingType === 'mp4' ? '🎵 正在生成带音乐的 MP4 视频...' : '📸 正在生成高清图片...' }}
             </div>
             <div class="text-kraft-600 text-xs font-serif-sc mt-1">请稍候，这可能需要几秒钟</div>
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <MusicSelector
+      v-model="showMusicSelector"
+      @select-music="handleSelectMusic"
+      @select-voice="handleSelectVoice"
+    />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition-all duration-200 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-all duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="showQRCodeDialog"
+          class="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+          @click.self="showQRCodeDialog = false"
+        >
+          <div class="bg-kraft-50 rounded-sm border-4 border-navy-800 shadow-vintage max-w-md w-full overflow-hidden">
+            <div class="bg-navy-800 text-kraft-50 px-6 py-4 border-b-4 border-postred-600">
+              <h2 class="font-playfair text-xl font-bold tracking-wider flex items-center gap-2">
+                📱 生成二维码
+              </h2>
+              <p class="text-kraft-300 text-xs font-serif-sc mt-1">输入二维码链接或文本</p>
+            </div>
+            <div class="p-6 space-y-4">
+              <div>
+                <label class="block text-navy-700 font-serif-sc mb-1 text-sm">二维码内容</label>
+                <input
+                  v-model="qrCodeText"
+                  type="text"
+                  class="input-field w-full"
+                  placeholder="输入链接或文本..."
+                  @input="qrCodeDataUrl = qrCodeText.trim() ? generateQRCodeDataUrl(qrCodeText, 120) : ''"
+                />
+              </div>
+              <div v-if="qrCodeDataUrl" class="flex justify-center">
+                <div class="p-4 bg-white rounded-sm border-2 border-kraft-300">
+                  <img :src="qrCodeDataUrl" alt="QR Code" class="w-32 h-32" />
+                </div>
+              </div>
+            </div>
+            <div class="bg-kraft-100 px-6 py-3 border-t-2 border-kraft-300 flex justify-end gap-2">
+              <button
+                class="btn-secondary !text-sm !py-2 !px-5"
+                @click="showQRCodeDialog = false"
+              >
+                取消
+              </button>
+              <button
+                class="btn-primary !text-sm !py-2 !px-5"
+                :class="{ 'opacity-50 cursor-not-allowed': !qrCodeText.trim() }"
+                :disabled="!qrCodeText.trim()"
+                @click="confirmQRCode"
+              >
+                ✓ 确认添加
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

@@ -1,5 +1,6 @@
 <script setup>import { computed, ref } from 'vue';
 import { papers, stamps, postmarks, fonts } from '@/data/assets.js';
+import AudioIcon from '@/components/AudioIcon.vue';
 const props = defineProps({
  modelValue: { type: Object, required: true },
  selected: { type: Object, default: null },
@@ -33,6 +34,10 @@ function getItemSize(type, item) {
  return { w: 90 * (item.scale || 1), h: 110 * (item.scale || 1) };
  case 'postmarks':
  return { w: 140 * (item.scale || 1), h: 140 * (item.scale || 1) };
+ case 'audios':
+ return { w: item.width, h: item.height };
+ case 'qrcodes':
+ return { w: item.width, h: item.height };
  default:
  return { w: 100, h: 100 };
  }
@@ -413,6 +418,98 @@ defineExpose({ canvasRef });
             @mousedown="startRotate($event, 'postmarks', ins.id)"
           ></div>
         </div>
+      </div>
+
+      <div
+        v-for="au in modelValue.audios"
+        :key="au.id"
+        class="absolute cursor-move group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('audios', au.id) }"
+        :style="{
+          left: au.x + 'px',
+          top: au.y + 'px',
+          width: au.width + 'px',
+          height: au.height + 'px',
+          transform: `rotate(${au.rotation || 0}deg)`,
+          transformOrigin: 'center center'
+        }"
+        @mousedown="startDrag($event, 'audios', au.id)"
+        @click.stop="selectItem('audios', au.id)"
+      >
+        <AudioIcon
+          :audio-data="au"
+          :is-selected="isSelected('audios', au.id)"
+          :read-only="readOnly"
+          @select="selectItem('audios', au.id)"
+        />
+        <div
+          v-if="!readOnly && isSelected('audios', au.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'audios', au.id)"
+          ></div>
+        </div>
+        <div
+          v-if="!readOnly && isSelected('audios', au.id)"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm z-10"
+          @mousedown="startResize($event, 'audios', au.id)"
+        ></div>
+      </div>
+
+      <div
+        v-for="qr in modelValue.qrcodes"
+        :key="qr.id"
+        class="absolute cursor-move group"
+        :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('qrcodes', qr.id) }"
+        :style="{
+          left: qr.x + 'px',
+          top: qr.y + 'px',
+          width: qr.width + 'px',
+          height: qr.height + 'px',
+          transform: `rotate(${qr.rotation || 0}deg)`,
+          transformOrigin: 'center center'
+        }"
+        @mousedown="startDrag($event, 'qrcodes', qr.id)"
+        @click.stop="selectItem('qrcodes', qr.id)"
+      >
+        <div class="w-full h-full bg-white p-1 shadow-md">
+          <img
+            v-if="qr.dataUrl"
+            :src="qr.dataUrl"
+            class="w-full h-full object-contain"
+            alt="QR Code"
+            draggable="false"
+          />
+          <div v-else class="w-full h-full flex items-center justify-center text-navy-800 text-2xl">
+            📱
+          </div>
+        </div>
+        <div
+          v-if="qr.title"
+          class="absolute -bottom-5 left-0 right-0 text-center text-[10px] font-serif-sc text-navy-800 truncate"
+        >
+          {{ qr.title }}
+        </div>
+        <div
+          v-if="!readOnly && isSelected('qrcodes', qr.id)"
+          class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center"
+        >
+          <div class="w-px h-6 bg-navy-500"></div>
+          <div
+            class="w-5 h-5 bg-kraft-50 border-2 border-navy-500 rounded-full cursor-grab active:cursor-grabbing shadow-md hover:scale-110 transition-transform z-20"
+            title="拖拽旋转（按住 Shift 以 15° 步进）"
+            @mousedown="startRotate($event, 'qrcodes', qr.id)"
+          ></div>
+        </div>
+        <div
+          v-if="!readOnly && isSelected('qrcodes', qr.id)"
+          class="absolute -bottom-2 -right-2 w-5 h-5 bg-navy-800 border-2 border-kraft-50 cursor-se-resize rounded-sm z-10"
+          @mousedown="startResize($event, 'qrcodes', qr.id)"
+        ></div>
       </div>
 
       <div v-if="readOnly" class="absolute inset-0 pointer-events-none"></div>

@@ -1,12 +1,13 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { papers, stamps, postmarks, fonts } from '@/data/assets.js'
+import { recordIcons, backgroundMusic } from '@/data/music.js'
 
 const props = defineProps({
   postcard: { type: Object, required: true },
   selected: { type: Object, default: null }
 })
-const emit = defineEmits(['update:postcard', 'add-text', 'add-photo', 'add-stamp', 'add-postmark', 'delete-item', 'upload-photo'])
+const emit = defineEmits(['update:postcard', 'add-text', 'add-photo', 'add-stamp', 'add-postmark', 'delete-item', 'upload-photo', 'add-music', 'add-qrcode', 'generate-qr-for-voice'])
 
 const photoInputRef = ref(null)
 const currentPhotoId = ref(null)
@@ -90,6 +91,8 @@ const rotationPresets = [0, 90, 180, 270]
         <button class="btn-secondary text-sm !py-2 !px-3" @click="$emit('add-photo')">🖼️ 照片</button>
         <button class="btn-secondary text-sm !py-2 !px-3" @click="$emit('add-stamp')">📮 邮票</button>
         <button class="btn-secondary text-sm !py-2 !px-3" @click="$emit('add-postmark')">🕐 邮戳</button>
+        <button class="btn-secondary text-sm !py-2 !px-3" @click="$emit('add-music')">🎵 音乐</button>
+        <button class="btn-secondary text-sm !py-2 !px-3" @click="$emit('add-qrcode')">📱 二维码</button>
       </div>
     </div>
 
@@ -287,6 +290,119 @@ const rotationPresets = [0, 90, 180, 270]
               class="w-full accent-navy-700"
               :value="selectedItem.scale || 1"
               @input="updateItem('postmarks', selected.id, { scale: +$event.target.value })" />
+          </div>
+        </template>
+
+        <template v-if="selected.type === 'audios'">
+          <div class="mb-2 p-3 bg-kraft-100 rounded-sm border-2 border-kraft-300">
+            <div class="flex items-center gap-2 mb-2">
+              <div 
+                class="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                :style="{ backgroundColor: selectedItem.bgColor || '#dcb573' }"
+              >
+                {{ selectedItem.emoji || '🎵' }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-serif-sc font-bold text-navy-800 text-sm truncate">{{ selectedItem.name }}</div>
+                <div class="text-[11px] text-kraft-600">
+                  {{ selectedItem.type === 'voice' ? '🎤 语音留言' : '🎶 背景音乐' }}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <label class="block text-navy-700 font-serif-sc mb-1 text-xs">图标样式</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="icon in recordIcons" :key="icon.id"
+                class="py-2 px-2 rounded-sm border-2 transition-all text-sm font-serif-sc text-center"
+                :class="(selectedItem.iconType || 'record') === icon.id ? 'bg-navy-800 text-kraft-50 border-navy-900' : 'bg-kraft-100 text-navy-800 border-kraft-400 hover:border-navy-500'"
+                @click="updateItem('audios', selected.id, { iconType: icon.id })"
+              >
+                {{ icon.emoji }} {{ icon.name }}
+              </button>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-navy-700 font-serif-sc mb-1 text-xs">宽度 ({{ selectedItem.width }}px)</label>
+              <input type="range" min="60" max="200" step="5"
+                class="w-full accent-navy-700"
+                :value="selectedItem.width"
+                @input="updateItem('audios', selected.id, { width: +$event.target.value })" />
+            </div>
+            <div>
+              <label class="block text-navy-700 font-serif-sc mb-1 text-xs">高度 ({{ selectedItem.height }}px)</label>
+              <input type="range" min="60" max="200" step="5"
+                class="w-full accent-navy-700"
+                :value="selectedItem.height"
+                @input="updateItem('audios', selected.id, { height: +$event.target.value })" />
+            </div>
+          </div>
+          
+          <div v-if="selectedItem.type === 'voice'">
+            <label class="block text-navy-700 font-serif-sc mb-1 text-xs">语音操作</label>
+            <button 
+              class="w-full btn-secondary text-sm !py-2"
+              @click="$emit('generate-qr-for-voice', selectedItem)"
+            >
+              📱 生成语音二维码
+            </button>
+          </div>
+        </template>
+
+        <template v-if="selected.type === 'qrcodes'">
+          <div class="mb-2 p-3 bg-white rounded-sm border-2 border-kraft-300 flex justify-center">
+            <img 
+              v-if="selectedItem.dataUrl" 
+              :src="selectedItem.dataUrl" 
+              alt="QR Code" 
+              class="w-24 h-24"
+            />
+            <div v-else class="w-24 h-24 flex items-center justify-center text-navy-800 text-3xl">
+              📱
+            </div>
+          </div>
+          
+          <div>
+            <label class="block text-navy-700 font-serif-sc mb-1 text-xs">二维码内容</label>
+            <input
+              type="text"
+              class="input-field !text-sm"
+              :value="selectedItem.text"
+              @input="updateItem('qrcodes', selected.id, { text: $event.target.value })"
+              placeholder="链接或文本..."
+            />
+          </div>
+          
+          <div>
+            <label class="block text-navy-700 font-serif-sc mb-1 text-xs">标题（可选）</label>
+            <input
+              type="text"
+              class="input-field !text-sm"
+              :value="selectedItem.title || ''"
+              @input="updateItem('qrcodes', selected.id, { title: $event.target.value })"
+              placeholder="扫码收听..."
+            />
+          </div>
+          
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-navy-700 font-serif-sc mb-1 text-xs">宽度 ({{ selectedItem.width }}px)</label>
+              <input type="range" min="60" max="200" step="5"
+                class="w-full accent-navy-700"
+                :value="selectedItem.width"
+                @input="updateItem('qrcodes', selected.id, { width: +$event.target.value })" />
+            </div>
+            <div>
+              <label class="block text-navy-700 font-serif-sc mb-1 text-xs">高度 ({{ selectedItem.height }}px)</label>
+              <input type="range" min="60" max="200" step="5"
+                class="w-full accent-navy-700"
+                :value="selectedItem.height"
+                @input="updateItem('qrcodes', selected.id, { height: +$event.target.value })" />
+            </div>
           </div>
         </template>
       </div>
