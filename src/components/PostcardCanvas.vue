@@ -1,13 +1,22 @@
 <script setup>import { computed, ref } from 'vue';
 import { papers, stamps, postmarks, fonts } from '@/data/assets.js';
 import AudioIcon from '@/components/AudioIcon.vue';
+import DoodleCanvas from '@/components/DoodleCanvas.vue';
 const props = defineProps({
  modelValue: { type: Object, required: true },
  selected: { type: Object, default: null },
- readOnly: { type: Boolean, default: false }
+ readOnly: { type: Boolean, default: false },
+ doodleEnabled: { type: Boolean, default: false },
+ doodleBrushType: { type: String, default: 'hard' },
+ doodleBrushColor: { type: String, default: '#0f1e3d' },
+ doodleBrushSize: { type: Number, default: 5 },
+ doodleBrushOpacity: { type: Number, default: 1 },
+ doodleIsEraser: { type: Boolean, default: false },
+ doodleEraserSize: { type: Number, default: 20 }
 });
-const emit = defineEmits(['update:modelValue', 'select-item', 'interaction-start', 'interaction-end']);
+const emit = defineEmits(['update:modelValue', 'select-item', 'interaction-start', 'interaction-end', 'update-doodles', 'doodle-stroke-complete']);
 const canvasRef = ref(null);
+const doodleCanvasRef = ref(null);
 const dragState = ref(null);
 const resizing = ref(null);
 const rotating = ref(null);
@@ -187,7 +196,14 @@ function stampBox(scale = 1) {
 function pmBox(scale = 1) {
  return { w: 140 * scale, h: 140 * scale };
 }
-defineExpose({ canvasRef });
+function handleDoodlesUpdate(doodles) {
+  emit('update-doodles', doodles);
+}
+function handleDoodleStrokeComplete(stroke) {
+  emit('doodle-stroke-complete', stroke);
+  emit('interaction-end');
+}
+defineExpose({ canvasRef, doodleCanvasRef });
 </script>
 
 <template>
@@ -511,6 +527,25 @@ defineExpose({ canvasRef });
           @mousedown="startResize($event, 'qrcodes', qr.id)"
         ></div>
       </div>
+
+      <DoodleCanvas
+        ref="doodleCanvasRef"
+        :model-value="modelValue.doodles || []"
+        :read-only="readOnly || !doodleEnabled"
+        :width="540"
+        :height="720"
+        :brush-type="doodleBrushType"
+        :brush-color="doodleBrushColor"
+        :brush-size="doodleBrushSize"
+        :brush-opacity="doodleBrushOpacity"
+        :is-eraser="doodleIsEraser"
+        :eraser-size="doodleEraserSize"
+        class="z-30"
+        :class="{ 'pointer-events-none': !doodleEnabled }"
+        @update:model-value="handleDoodlesUpdate"
+        @stroke-complete="handleDoodleStrokeComplete"
+        @stroke-start="$emit('interaction-start')"
+      />
 
       <div v-if="readOnly" class="absolute inset-0 pointer-events-none"></div>
     </div>

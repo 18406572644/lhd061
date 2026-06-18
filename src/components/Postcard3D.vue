@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { papers, stamps, postmarks, fonts } from '@/data/assets.js';
+import DoodleCanvas from '@/components/DoodleCanvas.vue';
 
 const props = defineProps({
   postcard: { type: Object, required: true },
@@ -428,6 +429,14 @@ onUnmounted(() => {
                 </svg>
               </template>
             </div>
+
+            <DoodleCanvas
+              :model-value="postcard.doodles || []"
+              :read-only="true"
+              :width="540"
+              :height="720"
+              class="absolute inset-0 pointer-events-none z-10"
+            />
 
             <div
               class="absolute inset-0 pointer-events-none"

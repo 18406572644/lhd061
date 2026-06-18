@@ -5,10 +5,12 @@ import TemplatePanel from '@/components/TemplatePanel.vue';
 import Postcard3D from '@/components/Postcard3D.vue';
 import BackEditor from '@/components/BackEditor.vue';
 import MusicSelector from '@/components/MusicSelector.vue';
+import DoodleToolbar from '@/components/DoodleToolbar.vue';
 import { mockApi } from '@/api/mockApi.js';
 import { defaultTemplates, stamps, postmarks } from '@/data/assets.js';
 import { useQRCode } from '@/composables/useQRCode.js';
 import { useIndexedDB } from '@/composables/useIndexedDB.js';
+import { useDoodle } from '@/composables/useDoodle.js';
 import html2canvas from 'html2canvas';
 import { useHistory } from '@/composables/useHistory.js';
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: historyInit } = useHistory();
@@ -27,6 +29,29 @@ const showMusicSelector = ref(false);
 const showQRCodeDialog = ref(false);
 const qrCodeDataUrl = ref('');
 const qrCodeText = ref('');
+
+const {
+  isDrawing: doodleDrawing,
+  currentBrush,
+  isEraser,
+  eraserSize,
+  doodleHistory,
+  historyIndex: doodleHistoryIndex,
+  setBrushType,
+  setBrushColor,
+  setBrushSize,
+  setBrushOpacity,
+  setEraserMode,
+  setEraserSize,
+  canUndoDoodle,
+  canRedoDoodle,
+  undoDoodle,
+  redoDoodle,
+  clearDoodles,
+  setDoodles
+} = useDoodle();
+
+const doodleEnabled = ref(false);
 function createEmpty() {
  return {
  id: '',
@@ -37,7 +62,8 @@ function createEmpty() {
  stamps: [],
  postmarks: [],
  audios: [],
- qrcodes: []
+ qrcodes: [],
+ doodles: []
  };
 }
 function createEmptyBack() {
@@ -86,7 +112,8 @@ function applyTemplate(tpl, initHistory) {
  stamps: cloned.stamps || [],
  postmarks: cloned.postmarks || [],
  audios: cloned.audios || [],
- qrcodes: cloned.qrcodes || []
+ qrcodes: cloned.qrcodes || [],
+ doodles: cloned.doodles || []
  });
  if (cloned.backContent) {
  Object.assign(backContent, cloned.backContent);
@@ -136,7 +163,8 @@ function loadWork(work) {
  stamps: cloned.stamps || [],
  postmarks: cloned.postmarks || [],
  audios: cloned.audios || [],
- qrcodes: cloned.qrcodes || []
+ qrcodes: cloned.qrcodes || [],
+ doodles: cloned.doodles || []
  });
  if (cloned.backContent) {
  Object.assign(backContent, cloned.backContent);
@@ -162,6 +190,33 @@ function updateBackContent(val) {
  pushDebounceTimer = setTimeout(() => {
  historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  }, 300);
+}
+function handleUpdateDoodles(doodles) {
+  postcard.doodles = doodles;
+  setDoodles(doodles);
+}
+function handleDoodleStrokeComplete(stroke) {
+  historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+}
+function handleUndoDoodle() {
+  handleUndo();
+}
+function handleRedoDoodle() {
+  handleRedo();
+}
+function handleClearDoodles() {
+  if (!confirm('确定要清空所有涂鸦吗？')) return;
+  clearDoodles();
+  postcard.doodles = [];
+  historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+  showToast('涂鸦已清空', 'info');
+}
+function toggleDoodle() {
+  doodleEnabled.value = !doodleEnabled.value;
+  if (doodleEnabled.value) {
+    setDoodles(postcard.doodles || []);
+    showToast('🎨 画笔工具已开启，在画布上绘制', 'info');
+  }
 }
 function selectItemHandler(item) {
  selectedItem.value = item?.type && item?.id ? item : null;
@@ -913,7 +968,8 @@ async function restoreSnapshot(snapshot) {
  stamps: snapshot.stamps || [],
  postmarks: snapshot.postmarks || [],
  audios: snapshot.audios || [],
- qrcodes: snapshot.qrcodes || []
+ qrcodes: snapshot.qrcodes || [],
+ doodles: snapshot.doodles || []
  });
  if (snapshot.backContent) {
  Object.assign(backContent, snapshot.backContent);
@@ -936,7 +992,7 @@ function toggle3DMode() {
  showToast(is3DMode.value ? '🎬 已进入 3D 预览模式，拖拽可旋转查看' : '✏️ 已返回编辑模式', 'info');
 }
 watch([() => postcard.paperId, () => postcard.texts, () => postcard.photos, () => postcard.stamps, () => postcard.postmarks,
- () => postcard.audios, () => postcard.qrcodes, () => backContent, nameInput], () => {
+ () => postcard.audios, () => postcard.qrcodes, () => postcard.doodles, () => backContent, nameInput], () => {
  autoSaveDraft();
 }, { deep: true });
 onMounted(async () => {
@@ -1051,6 +1107,26 @@ onUnmounted(() => {
           @apply-template="applyTemplate"
           @load-work="loadWork"
         />
+        <DoodleToolbar
+          v-model="doodleEnabled"
+          :brush-type="currentBrush.type"
+          :brush-color="currentBrush.color"
+          :brush-size="currentBrush.size"
+          :brush-opacity="currentBrush.opacity"
+          :is-eraser="isEraser.value"
+          :eraser-size="eraserSize.value"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
+          @update:brush-type="setBrushType"
+          @update:brush-color="setBrushColor"
+          @update:brush-size="setBrushSize"
+          @update:brush-opacity="setBrushOpacity"
+          @update:is-eraser="setEraserMode"
+          @update:eraser-size="setEraserSize"
+          @undo="handleUndoDoodle"
+          @redo="handleRedoDoodle"
+          @clear="handleClearDoodles"
+        />
         <div class="panel text-xs font-serif-sc text-navy-700 space-y-2">
           <div class="section-title !text-base !mb-2">⌨️ 快捷键</div>
           <div class="flex justify-between"><span>撤销</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Ctrl+Z</kbd></div>
@@ -1070,10 +1146,19 @@ onUnmounted(() => {
             ref="canvasComp"
             :model-value="postcard"
             :selected="selectedItem"
+            :doodle-enabled="doodleEnabled"
+            :doodle-brush-type="currentBrush.type"
+            :doodle-brush-color="currentBrush.color"
+            :doodle-brush-size="currentBrush.size"
+            :doodle-brush-opacity="currentBrush.opacity"
+            :doodle-is-eraser="isEraser.value"
+            :doodle-eraser-size="eraserSize.value"
             @update:model-value="updatePostcard"
             @select-item="selectItemHandler"
             @interaction-start="onInteractionStart"
             @interaction-end="onInteractionEnd"
+            @update-doodles="handleUpdateDoodles"
+            @doodle-stroke-complete="handleDoodleStrokeComplete"
           />
         </div>
         <div v-else class="panel !p-0 overflow-hidden" style="height: 800px;">

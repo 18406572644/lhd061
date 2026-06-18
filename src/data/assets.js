@@ -70,6 +70,47 @@ export const fonts = [
   { id: 'f8', name: '快乐·童趣', family: "'ZCOOL KuaiLe', cursive", class: 'font-kuaile' }
 ]
 
+export const brushTypes = [
+  { id: 'hard', name: '硬笔', icon: '✏️', description: '边缘清晰的硬笔效果' },
+  { id: 'soft', name: '软笔', icon: '🖌️', description: '带羽化边缘的软笔效果' },
+  { id: 'marker', name: '马克笔', icon: '🖍️', description: '半透明叠加的马克笔效果' },
+  { id: 'chalk', name: '粉笔', icon: '📝', description: '颗粒质感的粉笔效果' },
+  { id: 'watercolor', name: '水彩笔', icon: '🎨', description: '柔和晕染的水彩效果' }
+]
+
+export const doodleColorPalettes = [
+  {
+    id: 'vintage',
+    name: '复古经典',
+    colors: ['#0f1e3d', '#7f1d1d', '#8a4d26', '#5c3423', '#b91c1c', '#dcb573']
+  },
+  {
+    id: 'ocean',
+    name: '海洋蓝调',
+    colors: ['#0c4a6e', '#0369a1', '#0891b2', '#06b6d4', '#22d3ee', '#e0f2fe']
+  },
+  {
+    id: 'forest',
+    name: '森林绿意',
+    colors: ['#14532d', '#166534', '#15803d', '#65a30d', '#84cc16', '#d9f99d']
+  },
+  {
+    id: 'sunset',
+    name: '落日余晖',
+    colors: ['#7c2d12', '#9a3412', '#c2410c', '#ea580c', '#f59e0b', '#fde68a']
+  },
+  {
+    id: 'candy',
+    name: '糖果缤纷',
+    colors: ['#be185d', '#db2777', '#ec4899', '#f472b6', '#f9a8d4', '#fce7f3']
+  },
+  {
+    id: 'monochrome',
+    name: '黑白灰阶',
+    colors: ['#000000', '#374151', '#6b7280', '#9ca3af', '#d1d5db', '#ffffff']
+  }
+]
+
 export const defaultTemplates = [
   {
     id: 'tpl1', name: '旅行记忆',
