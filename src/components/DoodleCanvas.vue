@@ -21,6 +21,8 @@ const ctx = ref(null);
 const isDrawing = ref(false);
 const currentStroke = ref(null);
 const lastPoint = ref(null);
+const tempEraserCanvas = ref(null);
+const tempEraserCtx = ref(null);
 
 const canvasStyle = computed(() => ({
   width: props.width + 'px',
@@ -29,6 +31,7 @@ const canvasStyle = computed(() => ({
 
 onMounted(() => {
   initCanvas();
+  initTempCanvas();
   redrawAll();
 });
 
@@ -40,6 +43,14 @@ function initCanvas() {
   ctx.value = canvas.getContext('2d');
   ctx.value.lineCap = 'round';
   ctx.value.lineJoin = 'round';
+}
+
+function initTempCanvas() {
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = props.width;
+  tempCanvas.height = props.height;
+  tempEraserCanvas.value = tempCanvas;
+  tempEraserCtx.value = tempCanvas.getContext('2d');
 }
 
 function getPointerPos(e) {
@@ -78,20 +89,32 @@ function startDrawing(e) {
   isDrawing.value = true;
   lastPoint.value = pos;
   
-  const tool = props.isEraser ? 'eraser' : props.brushType;
-  const size = props.isEraser ? props.eraserSize : props.brushSize;
-  
-  currentStroke.value = {
-    id: 'ds_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
-    tool,
-    color: props.brushColor,
-    size,
-    opacity: props.isEraser ? 1 : props.brushOpacity,
-    points: [{ x: pos.x, y: pos.y, pressure: pos.pressure }]
-  };
-  
-  emit('stroke-start', currentStroke.value);
-  drawDot(pos.x, pos.y, size * pos.pressure, tool, props.brushColor, props.brushOpacity);
+  if (props.isEraser) {
+    currentStroke.value = {
+      id: 'ds_erase_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+      tool: 'eraser',
+      color: '#ffffff',
+      size: props.eraserSize,
+      opacity: 1,
+      points: [{ x: pos.x, y: pos.y, pressure: pos.pressure }],
+      erasedIds: []
+    };
+    emit('stroke-start', currentStroke.value);
+    checkErase(pos.x, pos.y);
+  } else {
+    const tool = props.brushType;
+    const size = props.brushSize;
+    currentStroke.value = {
+      id: 'ds_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+      tool,
+      color: props.brushColor,
+      size,
+      opacity: props.brushOpacity,
+      points: [{ x: pos.x, y: pos.y, pressure: pos.pressure }]
+    };
+    emit('stroke-start', currentStroke.value);
+    drawDot(pos.x, pos.y, size * (0.5 + pos.pressure * 0.5), tool, props.brushColor, currentStroke.value.opacity);
+  }
 }
 
 function draw(e) {
@@ -104,9 +127,13 @@ function draw(e) {
   const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
   if (dist < 1) return;
   
-  currentStroke.value.points.push({ x: pos.x, y: pos.y, pressure: pos.pressure });
-  
-  drawStrokeSegment(last, pos);
+  if (props.isEraser) {
+    currentStroke.value.points.push({ x: pos.x, y: pos.y, pressure: pos.pressure });
+    checkEraseAlongPath(last, pos);
+  } else {
+    currentStroke.value.points.push({ x: pos.x, y: pos.y, pressure: pos.pressure });
+    drawStrokeSegment(last, pos);
+  }
   lastPoint.value = pos;
 }
 
@@ -116,21 +143,69 @@ function stopDrawing(e) {
   
   isDrawing.value = false;
   
-  if (currentStroke.value && currentStroke.value.points.length >= 2) {
-    const newStrokes = [...props.modelValue, currentStroke.value];
-    emit('update:modelValue', newStrokes);
-    emit('stroke-complete', currentStroke.value);
+  if (props.isEraser) {
+    if (currentStroke.value.erasedIds.length > 0) {
+      const existingStrokes = (props.modelValue || []).filter(
+        s => !currentStroke.value.erasedIds.includes(s.id)
+      );
+      emit('update:modelValue', existingStrokes);
+      emit('stroke-complete', currentStroke.value);
+    }
+  } else {
+    if (currentStroke.value && currentStroke.value.points.length >= 2) {
+      const newStrokes = [...props.modelValue, currentStroke.value];
+      emit('update:modelValue', newStrokes);
+      emit('stroke-complete', currentStroke.value);
+    }
   }
   
   currentStroke.value = null;
   lastPoint.value = null;
 }
 
+function checkErase(x, y) {
+  const eraserRadius = props.eraserSize / 2;
+  const existingStrokes = props.modelValue || [];
+  
+  for (const stroke of existingStrokes) {
+    if (currentStroke.value.erasedIds.includes(stroke.id)) continue;
+    if (strokeHitsPoint(stroke, x, y, eraserRadius)) {
+      currentStroke.value.erasedIds.push(stroke.id);
+      redrawAll();
+    }
+  }
+}
+
+function checkEraseAlongPath(from, to) {
+  const eraserRadius = props.eraserSize / 2;
+  const dist = Math.hypot(to.x - from.x, to.y - from.y);
+  const steps = Math.max(1, Math.floor(dist / 3));
+  
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = from.x + (to.x - from.x) * t;
+    const y = from.y + (to.y - from.y) * t;
+    checkErase(x, y);
+  }
+}
+
+function strokeHitsPoint(stroke, x, y, radius) {
+  if (!stroke.points || stroke.tool === 'eraser') return false;
+  const strokeWidth = stroke.size / 2 + radius;
+  
+  for (const p of stroke.points) {
+    if (Math.hypot(p.x - x, p.y - y) <= strokeWidth) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function drawStrokeSegment(from, to) {
-  const tool = props.isEraser ? 'eraser' : props.brushType;
-  const size = props.isEraser ? props.eraserSize : props.brushSize;
+  const tool = props.brushType;
+  const size = props.brushSize;
   const color = props.brushColor;
-  const opacity = props.isEraser ? 1 : props.brushOpacity;
+  const opacity = props.brushOpacity;
   
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
   const steps = Math.max(1, Math.floor(dist / 2));
@@ -152,13 +227,7 @@ function drawDot(x, y, size, tool, color, opacity) {
   
   context.save();
   
-  if (tool === 'eraser') {
-    context.globalCompositeOperation = 'destination-out';
-    context.beginPath();
-    context.arc(x, y, size / 2, 0, Math.PI * 2);
-    context.fillStyle = 'rgba(0, 0, 0, 1)';
-    context.fill();
-  } else if (tool === 'hard') {
+  if (tool === 'hard') {
     context.globalAlpha = opacity;
     context.fillStyle = color;
     context.beginPath();
@@ -212,6 +281,7 @@ function drawDot(x, y, size, tool, color, opacity) {
 function drawStroke(stroke) {
   const { tool, color, size, opacity, points } = stroke;
   if (!points || points.length < 1) return;
+  if (tool === 'eraser') return;
   
   if (points.length === 1) {
     const p = points[0];

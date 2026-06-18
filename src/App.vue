@@ -53,18 +53,19 @@ const {
 
 const doodleEnabled = ref(false);
 function createEmpty() {
- return {
- id: '',
- name: '',
- paperId: 'p1',
- texts: [],
- photos: [],
- stamps: [],
- postmarks: [],
- audios: [],
- qrcodes: [],
- doodles: []
- };
+  return {
+    id: '',
+    name: '',
+    paperId: 'p1',
+    texts: [],
+    photos: [],
+    stamps: [],
+    postmarks: [],
+    audios: [],
+    qrcodes: [],
+    doodles: [],
+    backDoodles: []
+  };
 }
 function createEmptyBack() {
  return {
