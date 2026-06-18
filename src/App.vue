@@ -1,17 +1,23 @@
-<script setup>import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue';
+<script setup>import { ref, reactive, onMounted, onUnmounted, watch, nextTick, computed } from 'vue';
 import PostcardCanvas from '@/components/PostcardCanvas.vue';
 import PropertyPanel from '@/components/PropertyPanel.vue';
 import TemplatePanel from '@/components/TemplatePanel.vue';
+import Postcard3D from '@/components/Postcard3D.vue';
+import BackEditor from '@/components/BackEditor.vue';
 import { mockApi } from '@/api/mockApi.js';
 import { defaultTemplates, stamps, postmarks } from '@/data/assets.js';
 import html2canvas from 'html2canvas';
 import { useHistory } from '@/composables/useHistory.js';
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: historyInit } = useHistory();
 const canvasComp = ref(null);
+const card3DRef = ref(null);
 const templatePanelRef = ref(null);
 const isInteracting = ref(false);
 const isRestoring = ref(false);
 let pushDebounceTimer = null;
+const is3DMode = ref(false);
+const rightPanelTab = ref('property');
+const showExportDialog = ref(false);
 function createEmpty() {
  return {
  id: '',
@@ -23,6 +29,17 @@ function createEmpty() {
  postmarks: []
  };
 }
+function createEmptyBack() {
+ return {
+ recipient: '',
+ address: '',
+ city: '',
+ message: '',
+ sender: '',
+ stampId: 's1',
+ postmarkId: 'pm1'
+ };
+}
 function deepClone(tpl) {
  return JSON.parse(JSON.stringify(tpl));
 }
@@ -31,10 +48,12 @@ function historyPush(state) {
  pushSnapshot(state);
 }
 const postcard = reactive(createEmpty());
+const backContent = reactive(createEmptyBack());
 const selectedItem = ref(null);
 const toast = ref({ show: false, type: 'info', msg: '' });
 const saving = ref(false);
 const exporting = ref(false);
+const exportingType = ref('');
 const nameInput = ref('');
 const draftAutoSaveTimer = ref(null);
 const hasDraft = ref(false);
@@ -45,6 +64,7 @@ function showToast(msg, type = 'info') {
 function applyTemplate(tpl, initHistory) {
  const cloned = deepClone(tpl);
  Object.assign(postcard, createEmpty());
+ Object.assign(backContent, createEmptyBack());
  nextTick(() => {
  Object.assign(postcard, {
  id: '',
@@ -55,24 +75,60 @@ function applyTemplate(tpl, initHistory) {
  stamps: cloned.stamps || [],
  postmarks: cloned.postmarks || []
  });
+ if (cloned.backContent) {
+ Object.assign(backContent, cloned.backContent);
+ }
+ else {
+ Object.assign(backContent, {
+ message: defaultBackMessage(tpl),
+ sender: '匿名旅行者',
+ stampId: cloned.stamps?.[0]?.stampId || 's1',
+ postmarkId: cloned.postmarks?.[0]?.postmarkId || 'pm1'
+ });
+ }
  nameInput.value = postcard.name;
  selectedItem.value = null;
  if (initHistory) {
- historyInit(deepClone(postcard));
- } else {
- historyPush(deepClone(postcard));
+ historyInit(deepClone({ ...postcard, backContent: { ...backContent } }));
+ }
+ else {
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  }
  showToast(`已应用模板「${tpl.name}」`, 'success');
  });
 }
+function defaultBackMessage(tpl) {
+ if (tpl.id === 'tpl1') {
+ return '这一路走过的风景，\n愿与你共享。\n\n期待下次相遇，\n把酒言欢！';
+ }
+ if (tpl.id === 'tpl2') {
+ return 'With love and longing,\nevery moment apart\nmakes my heart grow fonder.\n\n❤️';
+ }
+ if (tpl.id === 'tpl3') {
+ return '岁岁常欢愉，\n万事皆胜意。\n\n愿新的一年，\n所求皆如愿！';
+ }
+ return '';
+}
 function loadWork(work) {
  const cloned = deepClone(work);
  Object.assign(postcard, createEmpty());
+ Object.assign(backContent, createEmptyBack());
  nextTick(() => {
- Object.assign(postcard, cloned);
+ Object.assign(postcard, {
+ id: cloned.id || '',
+ name: cloned.name || '',
+ paperId: cloned.paperId || 'p1',
+ texts: cloned.texts || [],
+ photos: cloned.photos || [],
+ stamps: cloned.stamps || [],
+ postmarks: cloned.postmarks || []
+ });
+ if (cloned.backContent) {
+ Object.assign(backContent, cloned.backContent);
+ }
  nameInput.value = postcard.name || '';
  selectedItem.value = null;
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast(`已加载作品「${work.name || '未命名'}」`, 'success');
  });
 }
@@ -81,7 +137,15 @@ function updatePostcard(val) {
  if (isInteracting.value || isRestoring.value) return;
  clearTimeout(pushDebounceTimer);
  pushDebounceTimer = setTimeout(() => {
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
+ }, 300);
+}
+function updateBackContent(val) {
+ Object.assign(backContent, val);
+ if (isInteracting.value || isRestoring.value) return;
+ clearTimeout(pushDebounceTimer);
+ pushDebounceTimer = setTimeout(() => {
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  }, 300);
 }
 function selectItemHandler(item) {
@@ -104,7 +168,7 @@ function addText() {
  };
  postcard.texts.push(t);
  selectedItem.value = { type: 'texts', id: t.id };
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已添加文字块，点击编辑属性', 'info');
 }
 function addPhoto() {
@@ -118,7 +182,7 @@ function addPhoto() {
  };
  postcard.photos.push(ph);
  selectedItem.value = { type: 'photos', id: ph.id };
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已添加照片占位，在右侧面板上传图片', 'info');
 }
 function addStamp() {
@@ -134,7 +198,7 @@ function addStamp() {
  };
  postcard.stamps.push(s);
  selectedItem.value = { type: 'stamps', id: s.id };
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已添加邮票「' + chosen.name + '」', 'info');
 }
 function addPostmark() {
@@ -150,16 +214,17 @@ function addPostmark() {
  };
  postcard.postmarks.push(p);
  selectedItem.value = { type: 'postmarks', id: p.id };
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已添加邮戳「' + chosen.name + '」', 'info');
 }
 function resetCanvas() {
  if (!confirm('确定要清空画布并重新开始吗？'))
  return;
  Object.assign(postcard, createEmpty());
+ Object.assign(backContent, createEmptyBack());
  nameInput.value = '';
  selectedItem.value = null;
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('画布已重置', 'info');
 }
 async function saveWork() {
@@ -169,6 +234,7 @@ async function saveWork() {
  try {
  const work = {
  ...deepClone(postcard),
+ backContent: { ...backContent },
  name: nameInput.value || '未命名作品'
  };
  const res = await mockApi.saveWork(work);
@@ -194,19 +260,19 @@ function autoSaveDraft() {
  if (draftAutoSaveTimer.value)
  clearTimeout(draftAutoSaveTimer.value);
  draftAutoSaveTimer.value = setTimeout(async () => {
- const snapshot = { ...deepClone(postcard), name: nameInput.value || '未命名草稿' };
+ const snapshot = { ...deepClone(postcard), backContent: { ...backContent }, name: nameInput.value || '未命名草稿' };
  const res = await mockApi.saveDraft(snapshot);
  if (res.code === 200)
  hasDraft.value = true;
  if (!isRestoring.value) {
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  }
  }, 1500);
 }
 async function loadDraft() {
  const res = await mockApi.getDraft();
  if (res.code === 200 && res.data) {
- applyTemplate({ ...res.data, name: res.data.name + ' (草稿)' });
+ applyTemplate({ ...res.data, name: res.data.name + ' (草稿)' }, false);
  hasDraft.value = !!res.data;
  showToast('已恢复上次草稿', 'success');
  }
@@ -224,16 +290,49 @@ async function clearDraft() {
  }
 }
 async function exportImage() {
- if (exporting.value || !canvasComp.value?.canvasRef)
+ showExportDialog.value = true;
+}
+async function doExport(type) {
+ if (exporting.value) return;
+ if (type === '3d_gif') {
+ showToast('🎬 正在录制翻页动画，请稍候...', 'info');
+ showExportDialog.value = false;
+ await exportFlipAnimation();
  return;
+ }
+ showExportDialog.value = false;
  exporting.value = true;
+ exportingType.value = type;
  try {
  showToast('正在生成高清图片，请稍候...', 'info');
  const prevSel = selectedItem.value;
  selectedItem.value = null;
  await nextTick();
  await new Promise(r => setTimeout(r, 200));
- const canvas = await html2canvas(canvasComp.value.canvasRef, {
+ let targetEl = null;
+ let suffix = 'front';
+ if (type === 'front') {
+ if (is3DMode.value) {
+ targetEl = card3DRef.value?.frontCanvasRef;
+ } else {
+ targetEl = canvasComp.value?.canvasRef;
+ }
+ suffix = '正面';
+ } else if (type === 'back') {
+ if (is3DMode.value) {
+ targetEl = card3DRef.value?.backCanvasRef;
+ } else {
+ showToast('请先切换到 3D 预览模式导出背面', 'error');
+ exporting.value = false;
+ return;
+ }
+ suffix = '背面';
+ }
+ if (!targetEl) {
+ showToast('导出元素未找到', 'error');
+ return;
+ }
+ const canvas = await html2canvas(targetEl, {
  scale: 3,
  useCORS: true,
  allowTaint: true,
@@ -243,13 +342,13 @@ async function exportImage() {
  });
  const dataUrl = canvas.toDataURL('image/png', 0.95);
  const link = document.createElement('a');
- link.download = `postcard_${nameInput.value || 'vintage'}_${Date.now()}.png`;
+ link.download = `postcard_${nameInput.value || 'vintage'}_${suffix}_${Date.now()}.png`;
  link.href = dataUrl;
  document.body.appendChild(link);
  link.click();
  document.body.removeChild(link);
  selectedItem.value = prevSel;
- showToast('🎉 图片导出成功！已下载到本地', 'success');
+ showToast(`🎉 ${suffix}图片导出成功！已下载到本地`, 'success');
  }
  catch (e) {
  console.error(e);
@@ -257,6 +356,261 @@ async function exportImage() {
  }
  finally {
  exporting.value = false;
+ exportingType.value = '';
+ }
+}
+async function exportFlipAnimation() {
+ if (!is3DMode.value) {
+ showToast('请先切换到 3D 预览模式录制翻页动画', 'error');
+ return;
+ }
+ exporting.value = true;
+ exportingType.value = '3d_gif';
+ try {
+ const frames = [];
+ const sceneEl = card3DRef.value?.$el?.querySelector('[ref="sceneRef"]') || card3DRef.value?.$el?.firstElementChild;
+ if (!sceneEl) {
+ showToast('3D 场景未找到', 'error');
+ return;
+ }
+ if (card3DRef.value?.flipProgress > 0.5) {
+ await card3DRef.value?.toggleFlip();
+ await new Promise(r => setTimeout(r, 1300));
+ }
+ card3DRef.value?.resetView();
+ await new Promise(r => setTimeout(r, 200));
+ showToast('📸 开始截取帧... (1/2)', 'info');
+ const frameCount = 24;
+ for (let i = 0; i < frameCount; i++) {
+ const progress = i / (frameCount - 1);
+ const angle = progress * 180;
+ if (card3DRef.value) {
+ card3DRef.value.flipProgress.value = progress;
+ }
+ await new Promise(r => setTimeout(r, 50));
+ try {
+ const canvas = await html2canvas(card3DRef.value.$el, {
+ scale: 1.5,
+ useCORS: true,
+ allowTaint: true,
+ backgroundColor: '#0f1e3d',
+ logging: false,
+ imageTimeout: 5000
+ });
+ frames.push(canvas);
+ } catch (e) {
+ console.warn('帧截取失败', i, e);
+ }
+ }
+ showToast('📸 继续截取帧... (2/2)', 'info');
+ for (let i = 0; i < frameCount; i++) {
+ const progress = 1 - i / (frameCount - 1);
+ if (card3DRef.value) {
+ card3DRef.value.flipProgress.value = progress;
+ }
+ await new Promise(r => setTimeout(r, 50));
+ try {
+ const canvas = await html2canvas(card3DRef.value.$el, {
+ scale: 1.5,
+ useCORS: true,
+ allowTaint: true,
+ backgroundColor: '#0f1e3d',
+ logging: false,
+ imageTimeout: 5000
+ });
+ frames.push(canvas);
+ } catch (e) {
+ console.warn('帧截取失败', i, e);
+ }
+ }
+ if (card3DRef.value) {
+ card3DRef.value.flipProgress.value = 0;
+ }
+ if (frames.length === 0) {
+ showToast('动画帧截取失败，请重试', 'error');
+ return;
+ }
+ showToast('🎞️ 正在生成 GIF 动画...', 'info');
+ const resultCanvas = document.createElement('canvas');
+ const firstFrame = frames[0];
+ resultCanvas.width = firstFrame.width;
+ resultCanvas.height = firstFrame.height;
+ const ctx = resultCanvas.getContext('2d');
+ ctx.fillStyle = '#0f1e3d';
+ ctx.fillRect(0, 0, resultCanvas.width, resultCanvas.height);
+ const frameDuration = 80;
+ const gifData = await generateSimpleGif(frames, resultCanvas.width, resultCanvas.height, frameDuration);
+ const blob = new Blob([gifData], { type: 'image/gif' });
+ const url = URL.createObjectURL(blob);
+ const link = document.createElement('a');
+ link.download = `postcard_${nameInput.value || 'vintage'}_3D翻页动画_${Date.now()}.gif`;
+ link.href = url;
+ document.body.appendChild(link);
+ link.click();
+ document.body.removeChild(link);
+ setTimeout(() => URL.revokeObjectURL(url), 5000);
+ showToast('🎉 3D 翻页动画导出成功！', 'success');
+ }
+ catch (e) {
+ console.error(e);
+ showToast('导出失败：' + e.message, 'error');
+ }
+ finally {
+ exporting.value = false;
+ exportingType.value = '';
+ }
+}
+async function generateSimpleGif(frames, width, height, delay) {
+ const encoder = new SimpleGifEncoder(width, height);
+ for (const frame of frames) {
+ const tempCanvas = document.createElement('canvas');
+ tempCanvas.width = width;
+ tempCanvas.height = height;
+ const tctx = tempCanvas.getContext('2d');
+ tctx.fillStyle = '#0f1e3d';
+ tctx.fillRect(0, 0, width, height);
+ tctx.drawImage(frame, 0, 0, width, height);
+ const imgData = tctx.getImageData(0, 0, width, height);
+ encoder.addFrame(imgData, delay);
+ }
+ return encoder.finish();
+}
+class SimpleGifEncoder {
+ constructor(w, h) {
+ this.width = w;
+ this.height = h;
+ this.frames = [];
+ this.palette = this._buildPalette();
+ }
+ _buildPalette() {
+ const palette = [];
+ const levels = [0, 51, 102, 153, 204, 255];
+ for (let r = 0; r < 6; r++)
+ for (let g = 0; g < 6; g++)
+ for (let b = 0; b < 6; b++) {
+ palette.push(levels[r], levels[g], levels[b]);
+ }
+ return palette;
+ }
+ _quantize(r, g, b) {
+ const idx = Math.round(r / 51) * 36 + Math.round(g / 51) * 6 + Math.round(b / 51);
+ return Math.min(idx, 215);
+ }
+ addFrame(imgData, delay) {
+ const pixels = imgData.data;
+ const indexed = new Uint8Array(this.width * this.height);
+ for (let i = 0, j = 0; i < pixels.length; i += 4, j++) {
+ indexed[j] = this._quantize(pixels[i], pixels[i + 1], pixels[i + 2]);
+ }
+ this.frames.push({ indexed, delay: Math.round(delay / 10) });
+ }
+ finish() {
+ const parts = [];
+ parts.push(new Uint8Array([71, 73, 70, 56, 57, 97]));
+ const lsd = new Uint8Array(7);
+ lsd[0] = this.width & 0xff;
+ lsd[1] = (this.width >> 8) & 0xff;
+ lsd[2] = this.height & 0xff;
+ lsd[3] = (this.height >> 8) & 0xff;
+ lsd[4] = 0xf7;
+ lsd[5] = 0;
+ lsd[6] = 0;
+ parts.push(lsd);
+ parts.push(new Uint8Array(this.palette));
+ parts.push(new Uint8Array([33, 255, 11, 78, 69, 84, 83, 67, 65, 80, 69, 50, 46, 48, 3, 1, 0, 0, 0]));
+ for (const frame of this.frames) {
+ const gc = new Uint8Array(8);
+ gc[0] = 0x21;
+ gc[1] = 0xf9;
+ gc[2] = 4;
+ gc[3] = 0;
+ gc[4] = frame.delay & 0xff;
+ gc[5] = (frame.delay >> 8) & 0xff;
+ gc[6] = 0;
+ gc[7] = 0;
+ parts.push(gc);
+ const id = new Uint8Array(10);
+ id[0] = 0x2c;
+ id[1] = 0;
+ id[2] = 0;
+ id[3] = 0;
+ id[4] = 0;
+ id[5] = this.width & 0xff;
+ id[6] = (this.width >> 8) & 0xff;
+ id[7] = this.height & 0xff;
+ id[8] = (this.height >> 8) & 0xff;
+ id[9] = 0;
+ parts.push(id);
+ const lzw = this._lzwEncode(frame.indexed);
+ parts.push(lzw);
+ }
+ parts.push(new Uint8Array([0x3b]));
+ let totalLen = 0;
+ for (const p of parts) totalLen += p.length;
+ const result = new Uint8Array(totalLen);
+ let offset = 0;
+ for (const p of parts) {
+ result.set(p, offset);
+ offset += p.length;
+ }
+ return result.buffer;
+ }
+ _lzwEncode(indexed) {
+ const minCodeSize = 8;
+ const clearCode = 1 << minCodeSize;
+ const eoiCode = clearCode + 1;
+ const output = [];
+ let bitBuffer = 0;
+ let bitCount = 0;
+ let codeSize = minCodeSize + 1;
+ let dict = new Map();
+ function resetDict() {
+ dict.clear();
+ for (let i = 0; i < clearCode; i++) {
+ dict.set(String(i), i);
+ }
+ }
+ function writeCode(code) {
+ bitBuffer |= code << bitCount;
+ bitCount += codeSize;
+ while (bitCount >= 8) {
+ output.push(bitBuffer & 0xff);
+ bitBuffer >>= 8;
+ bitCount -= 8;
+ }
+ }
+ resetDict();
+ writeCode(clearCode);
+ let nextCode = eoiCode + 1;
+ let w = String(indexed[0]);
+ for (let i = 1; i < indexed.length; i++) {
+ const c = String(indexed[i]);
+ const wc = w + ',' + c;
+ if (dict.has(wc)) {
+ w = wc;
+ } else {
+ writeCode(dict.get(w));
+ if (nextCode < 4096) {
+ dict.set(wc, nextCode++);
+ if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++;
+ } else {
+ writeCode(clearCode);
+ resetDict();
+ nextCode = eoiCode + 1;
+ codeSize = minCodeSize + 1;
+ }
+ w = c;
+ }
+ }
+ writeCode(dict.get(w));
+ writeCode(eoiCode);
+ if (bitCount > 0) output.push(bitBuffer & 0xff);
+ const subBlocks = [];
+ for (let i = 0; i < output.length; i += 255) {
+ const chunk = output.slice(i, i + 255);
+ subBlocks.push(chunk.length, ...chunk);
+ }
+ return new Uint8Array([minCodeSize, ...subBlocks, 0]);
  }
 }
 function handleKeydown(e) {
@@ -283,7 +637,7 @@ function handleKeydown(e) {
  if (idx >= 0) {
  arr.splice(idx, 1);
  selectedItem.value = null;
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
  showToast('已删除选中元素', 'info');
  }
  }
@@ -298,11 +652,12 @@ function onInteractionStart() {
 }
 function onInteractionEnd() {
  isInteracting.value = false;
- historyPush(deepClone(postcard));
+ historyPush(deepClone({ ...postcard, backContent: { ...backContent } }));
 }
 async function restoreSnapshot(snapshot) {
  isRestoring.value = true;
  Object.assign(postcard, createEmpty());
+ Object.assign(backContent, createEmptyBack());
  await nextTick();
  Object.assign(postcard, {
  id: snapshot.id || '',
@@ -313,6 +668,9 @@ async function restoreSnapshot(snapshot) {
  stamps: snapshot.stamps || [],
  postmarks: snapshot.postmarks || []
  });
+ if (snapshot.backContent) {
+ Object.assign(backContent, snapshot.backContent);
+ }
  nameInput.value = postcard.name;
  selectedItem.value = null;
  await nextTick();
@@ -326,7 +684,12 @@ function handleRedo() {
  const snapshot = redo();
  if (snapshot) restoreSnapshot(snapshot);
 }
-watch([() => postcard.paperId, () => postcard.texts, () => postcard.photos, () => postcard.stamps, () => postcard.postmarks, nameInput], () => {
+function toggle3DMode() {
+ is3DMode.value = !is3DMode.value;
+ showToast(is3DMode.value ? '🎬 已进入 3D 预览模式，拖拽可旋转查看' : '✏️ 已返回编辑模式', 'info');
+}
+watch([() => postcard.paperId, () => postcard.texts, () => postcard.photos, () => postcard.stamps, () => postcard.postmarks,
+ () => backContent, nameInput], () => {
  autoSaveDraft();
 }, { deep: true });
 onMounted(async () => {
@@ -364,6 +727,16 @@ onUnmounted(() => {
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
+          <button
+            class="!text-xs !py-1.5 !px-3 whitespace-nowrap transition-all shadow-md"
+            :class="is3DMode
+              ? '!bg-amber-500 !text-navy-900 !border-amber-600 hover:!bg-amber-400 btn-primary'
+              : '!bg-navy-700 !text-kraft-100 !border-navy-600 hover:!bg-navy-600 btn-secondary'"
+            @click="toggle3DMode"
+            :title="is3DMode ? '返回2D编辑模式' : '进入3D立体预览模式'"
+          >
+            {{ is3DMode ? '🎬 3D 预览中' : '🎬 3D 预览' }}
+          </button>
           <button
             class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap"
             :class="{ 'opacity-30 cursor-not-allowed': !canUndo }"
@@ -413,7 +786,7 @@ onUnmounted(() => {
             @click="exportImage"
           >
             <span v-if="exporting">⏳ 导出中...</span>
-            <span v-else>📥 导出高清图</span>
+            <span v-else>📥 导出</span>
           </button>
         </div>
       </div>
@@ -441,7 +814,7 @@ onUnmounted(() => {
       </aside>
 
       <main class="min-w-0">
-        <div class="panel !p-2 bg-kraft-200/60 backdrop-blur-sm">
+        <div v-if="!is3DMode" class="panel !p-2 bg-kraft-200/60 backdrop-blur-sm">
           <PostcardCanvas
             ref="canvasComp"
             :model-value="postcard"
@@ -452,13 +825,44 @@ onUnmounted(() => {
             @interaction-end="onInteractionEnd"
           />
         </div>
+        <div v-else class="panel !p-0 overflow-hidden" style="height: 800px;">
+          <Postcard3D
+            ref="card3DRef"
+            :postcard="postcard"
+            :back-content="backContent"
+            @update:back-content="updateBackContent"
+          />
+        </div>
         <div class="text-center text-xs text-kraft-600 font-serif-sc mt-2">
-          明信片尺寸：540 × 720 px · 导出时自动放大 3 倍（1620 × 2160 高清）
+          <span v-if="!is3DMode">明信片尺寸：540 × 720 px · 导出时自动放大 3 倍（1620 × 2160 高清）</span>
+          <span v-else>🎬 3D 模式：拖拽明信片可旋转查看 · 点击「翻开背面」查看翻页动画</span>
         </div>
       </main>
 
       <aside class="sticky top-[88px] max-h-[calc(100vh-108px)] overflow-y-auto pr-1">
+        <div class="flex rounded-sm border-2 border-kraft-400 mb-4 overflow-hidden">
+          <button
+            class="flex-1 py-2 text-sm font-serif-sc transition-all"
+            :class="rightPanelTab === 'property'
+              ? 'bg-navy-800 text-kraft-50'
+              : 'bg-kraft-100 text-navy-800 hover:bg-kraft-200'"
+            @click="rightPanelTab = 'property'"
+          >
+            🎨 正面编辑
+          </button>
+          <button
+            class="flex-1 py-2 text-sm font-serif-sc transition-all border-l-2 border-kraft-400"
+            :class="rightPanelTab === 'back'
+              ? 'bg-navy-800 text-kraft-50'
+              : 'bg-kraft-100 text-navy-800 hover:bg-kraft-200'"
+            @click="rightPanelTab = 'back'"
+          >
+            ✉️ 背面编辑
+          </button>
+        </div>
+
         <PropertyPanel
+          v-show="rightPanelTab === 'property'"
           :postcard="postcard"
           :selected="selectedItem"
           @update:postcard="updatePostcard"
@@ -466,6 +870,10 @@ onUnmounted(() => {
           @add-photo="addPhoto"
           @add-stamp="addStamp"
           @add-postmark="addPostmark"
+        />
+        <BackEditor
+          v-show="rightPanelTab === 'back'"
+          v-model="backContent"
         />
       </aside>
     </div>
@@ -494,6 +902,113 @@ onUnmounted(() => {
           <span>{{ toast.msg }}</span>
         </div>
       </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition-all duration-200 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-all duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="showExportDialog"
+          class="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+          @click.self="showExportDialog = false"
+        >
+          <div class="bg-kraft-50 rounded-sm border-4 border-navy-800 shadow-vintage max-w-md w-full overflow-hidden">
+            <div class="bg-navy-800 text-kraft-50 px-6 py-4 border-b-4 border-postred-600">
+              <h2 class="font-playfair text-xl font-bold tracking-wider flex items-center gap-2">
+                📥 导出选项
+              </h2>
+              <p class="text-kraft-300 text-xs font-serif-sc mt-1">选择要导出的内容</p>
+            </div>
+            <div class="p-6 space-y-3">
+              <button
+                class="w-full py-4 px-4 rounded-sm border-2 transition-all flex items-center gap-4 text-left group"
+                :class="exporting ? 'opacity-50 cursor-not-allowed' : ''"
+                :disabled="exporting"
+                @click="doExport('front')"
+              >
+                <div class="w-16 h-12 rounded-sm border-2 border-navy-600 bg-gradient-to-br from-kraft-200 to-kraft-300 flex items-center justify-center text-2xl shadow-md group-hover:scale-105 transition-transform">
+                  🖼️
+                </div>
+                <div class="flex-1">
+                  <div class="font-serif-sc text-navy-900 font-bold text-base">正面高清图</div>
+                  <div class="text-kraft-600 text-xs">导出明信片正面（1620 × 2160 高清 PNG）</div>
+                </div>
+              </button>
+
+              <button
+                class="w-full py-4 px-4 rounded-sm border-2 transition-all flex items-center gap-4 text-left group"
+                :class="!is3DMode || exporting ? 'opacity-50 cursor-not-allowed' : ''"
+                :disabled="!is3DMode || exporting"
+                @click="doExport('back')"
+              >
+                <div class="w-16 h-12 rounded-sm border-2 border-postred-600 bg-gradient-to-br from-kraft-100 to-kraft-200 flex items-center justify-center text-2xl shadow-md group-hover:scale-105 transition-transform relative">
+                  ✉️
+                  <span class="absolute -bottom-1 -right-1 text-[10px] bg-postred-600 text-kraft-50 px-1 rounded-sm" v-if="!is3DMode">需3D</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-serif-sc text-navy-900 font-bold text-base flex items-center gap-2">
+                    背面高清图
+                    <span v-if="!is3DMode" class="text-[10px] bg-kraft-200 text-kraft-600 px-2 py-0.5 rounded-sm">请先切换到3D模式</span>
+                  </div>
+                  <div class="text-kraft-600 text-xs">导出明信片背面含地址/邮票/祝福语（1620 × 2160 高清 PNG）</div>
+                </div>
+              </button>
+
+              <div class="border-t-2 border-dashed border-kraft-300 my-4"></div>
+
+              <button
+                class="w-full py-4 px-4 rounded-sm border-2 transition-all flex items-center gap-4 text-left group relative overflow-hidden"
+                :class="!is3DMode || exporting ? 'opacity-50 cursor-not-allowed border-kraft-400' : 'border-amber-500 bg-gradient-to-r from-amber-50 to-kraft-50 hover:from-amber-100 hover:to-amber-50'"
+                :disabled="!is3DMode || exporting"
+                @click="doExport('3d_gif')"
+              >
+                <div class="w-16 h-12 rounded-sm border-2 border-amber-600 bg-gradient-to-br from-amber-200 via-amber-300 to-amber-400 flex items-center justify-center text-2xl shadow-md group-hover:scale-105 transition-transform relative">
+                  🎬
+                  <span class="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></span>
+                  <span class="absolute -bottom-1 -right-1 text-[10px] bg-postred-600 text-kraft-50 px-1 rounded-sm" v-if="!is3DMode">需3D</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-serif-sc text-navy-900 font-bold text-base flex items-center gap-2">
+                    <span class="text-amber-700">★</span>
+                    3D 翻页动画 GIF
+                    <span v-if="!is3DMode" class="text-[10px] bg-kraft-200 text-kraft-600 px-2 py-0.5 rounded-sm">请先切换到3D模式</span>
+                  </div>
+                  <div class="text-kraft-600 text-xs">导出带立体翻页效果的动态 GIF 动画，约 48 帧循环播放</div>
+                </div>
+              </button>
+            </div>
+            <div class="bg-kraft-100 px-6 py-3 border-t-2 border-kraft-300 flex justify-end">
+              <button
+                class="btn-secondary !text-sm !py-2 !px-5"
+                @click="showExportDialog = false"
+                :disabled="exporting"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport v-if="exporting" to="body">
+      <div class="fixed inset-0 z-[60] bg-navy-950/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+        <div class="bg-kraft-50 rounded-sm border-4 border-navy-800 shadow-vintage p-8 flex flex-col items-center gap-4 pointer-events-auto">
+          <div class="w-16 h-16 border-4 border-navy-800 border-t-transparent rounded-full animate-spin"></div>
+          <div class="text-center">
+            <div class="font-playfair text-lg font-bold text-navy-900 tracking-wider">
+              {{ exportingType === '3d_gif' ? '🎬 正在生成 3D 翻页动画...' : '📸 正在生成高清图片...' }}
+            </div>
+            <div class="text-kraft-600 text-xs font-serif-sc mt-1">请稍候，这可能需要几秒钟</div>
+          </div>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
