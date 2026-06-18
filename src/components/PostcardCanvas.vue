@@ -5,7 +5,7 @@ const props = defineProps({
  selected: { type: Object, default: null },
  readOnly: { type: Boolean, default: false }
 });
-const emit = defineEmits(['update:modelValue', 'select-item']);
+const emit = defineEmits(['update:modelValue', 'select-item', 'interaction-start', 'interaction-end']);
 const canvasRef = ref(null);
 const dragState = ref(null);
 const resizing = ref(null);
@@ -64,12 +64,13 @@ function startDrag(e, type, itemId) {
  if (!item)
  return;
  dragState.value = {
- type,
- itemId,
- offsetX: e.clientX - canvasRect.left - item.x,
- offsetY: e.clientY - canvasRect.top - item.y,
- canvasRect
+  type,
+  itemId,
+  offsetX: e.clientX - canvasRect.left - item.x,
+  offsetY: e.clientY - canvasRect.top - item.y,
+  canvasRect
  };
+ emit('interaction-start');
  selectItem(type, itemId);
  document.addEventListener('mousemove', onDrag);
  document.addEventListener('mouseup', stopDrag);
@@ -88,6 +89,7 @@ function stopDrag() {
  dragState.value = null;
  document.removeEventListener('mousemove', onDrag);
  document.removeEventListener('mouseup', stopDrag);
+ emit('interaction-end');
 }
 function startResize(e, type, itemId) {
  if (props.readOnly)
@@ -105,6 +107,7 @@ function startResize(e, type, itemId) {
  const startH = item.height || 100;
  resizing.value = { type, itemId, startX, startY, startW, startH, canvasRect };
  selectItem(type, itemId);
+ emit('interaction-start');
  document.addEventListener('mousemove', onResize);
  document.addEventListener('mouseup', stopResize);
 }
@@ -129,6 +132,7 @@ function stopResize() {
  resizing.value = null;
  document.removeEventListener('mousemove', onResize);
  document.removeEventListener('mouseup', stopResize);
+ emit('interaction-end');
 }
 function startRotate(e, type, itemId) {
  if (props.readOnly)
@@ -147,6 +151,7 @@ function startRotate(e, type, itemId) {
  const startRotation = item.rotation || 0;
  rotating.value = { type, itemId, centerX, centerY, startAngle, startRotation };
  selectItem(type, itemId);
+ emit('interaction-start');
  document.addEventListener('mousemove', onRotate);
  document.addEventListener('mouseup', stopRotate);
 }
@@ -169,6 +174,7 @@ function stopRotate() {
  rotating.value = null;
  document.removeEventListener('mousemove', onRotate);
  document.removeEventListener('mouseup', stopRotate);
+ emit('interaction-end');
 }
 function stampBox(scale = 1) {
  return { w: 90 * scale, h: 110 * scale };

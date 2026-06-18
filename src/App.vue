@@ -5,8 +5,13 @@ import TemplatePanel from '@/components/TemplatePanel.vue';
 import { mockApi } from '@/api/mockApi.js';
 import { defaultTemplates, stamps, postmarks } from '@/data/assets.js';
 import html2canvas from 'html2canvas';
+import { useHistory } from '@/composables/useHistory.js';
+const { canUndo, canRedo, pushSnapshot, undo, redo, init: historyInit } = useHistory();
 const canvasComp = ref(null);
 const templatePanelRef = ref(null);
+const isInteracting = ref(false);
+const isRestoring = ref(false);
+let pushDebounceTimer = null;
 function createEmpty() {
  return {
  id: '',
@@ -21,6 +26,10 @@ function createEmpty() {
 function deepClone(tpl) {
  return JSON.parse(JSON.stringify(tpl));
 }
+function historyPush(state) {
+ clearTimeout(pushDebounceTimer);
+ pushSnapshot(state);
+}
 const postcard = reactive(createEmpty());
 const selectedItem = ref(null);
 const toast = ref({ show: false, type: 'info', msg: '' });
@@ -33,7 +42,7 @@ function showToast(msg, type = 'info') {
  toast.value = { show: true, type, msg };
  setTimeout(() => { toast.value.show = false; }, 2800);
 }
-function applyTemplate(tpl) {
+function applyTemplate(tpl, initHistory) {
  const cloned = deepClone(tpl);
  Object.assign(postcard, createEmpty());
  nextTick(() => {
@@ -48,6 +57,11 @@ function applyTemplate(tpl) {
  });
  nameInput.value = postcard.name;
  selectedItem.value = null;
+ if (initHistory) {
+ historyInit(deepClone(postcard));
+ } else {
+ historyPush(deepClone(postcard));
+ }
  showToast(`已应用模板「${tpl.name}」`, 'success');
  });
 }
@@ -58,11 +72,17 @@ function loadWork(work) {
  Object.assign(postcard, cloned);
  nameInput.value = postcard.name || '';
  selectedItem.value = null;
+ historyPush(deepClone(postcard));
  showToast(`已加载作品「${work.name || '未命名'}」`, 'success');
  });
 }
 function updatePostcard(val) {
  Object.keys(val).forEach(k => { postcard[k] = val[k]; });
+ if (isInteracting.value || isRestoring.value) return;
+ clearTimeout(pushDebounceTimer);
+ pushDebounceTimer = setTimeout(() => {
+ historyPush(deepClone(postcard));
+ }, 300);
 }
 function selectItemHandler(item) {
  selectedItem.value = item?.type && item?.id ? item : null;
@@ -84,6 +104,7 @@ function addText() {
  };
  postcard.texts.push(t);
  selectedItem.value = { type: 'texts', id: t.id };
+ historyPush(deepClone(postcard));
  showToast('已添加文字块，点击编辑属性', 'info');
 }
 function addPhoto() {
@@ -97,6 +118,7 @@ function addPhoto() {
  };
  postcard.photos.push(ph);
  selectedItem.value = { type: 'photos', id: ph.id };
+ historyPush(deepClone(postcard));
  showToast('已添加照片占位，在右侧面板上传图片', 'info');
 }
 function addStamp() {
@@ -112,6 +134,7 @@ function addStamp() {
  };
  postcard.stamps.push(s);
  selectedItem.value = { type: 'stamps', id: s.id };
+ historyPush(deepClone(postcard));
  showToast('已添加邮票「' + chosen.name + '」', 'info');
 }
 function addPostmark() {
@@ -127,6 +150,7 @@ function addPostmark() {
  };
  postcard.postmarks.push(p);
  selectedItem.value = { type: 'postmarks', id: p.id };
+ historyPush(deepClone(postcard));
  showToast('已添加邮戳「' + chosen.name + '」', 'info');
 }
 function resetCanvas() {
@@ -135,6 +159,7 @@ function resetCanvas() {
  Object.assign(postcard, createEmpty());
  nameInput.value = '';
  selectedItem.value = null;
+ historyPush(deepClone(postcard));
  showToast('画布已重置', 'info');
 }
 async function saveWork() {
@@ -173,6 +198,9 @@ function autoSaveDraft() {
  const res = await mockApi.saveDraft(snapshot);
  if (res.code === 200)
  hasDraft.value = true;
+ if (!isRestoring.value) {
+ historyPush(deepClone(postcard));
+ }
  }, 1500);
 }
 async function loadDraft() {
@@ -232,11 +260,22 @@ async function exportImage() {
  }
 }
 function handleKeydown(e) {
+ const tag = (e.target.tagName || '').toLowerCase();
+ const inInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+ if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+ e.preventDefault();
+ if (!inInput) handleUndo();
+ return;
+ }
+ if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+ e.preventDefault();
+ if (!inInput) handleRedo();
+ return;
+ }
  if (e.key === 'Delete' || e.key === 'Backspace') {
  if (!selectedItem.value)
  return;
- const tag = (e.target.tagName || '').toLowerCase();
- if (tag === 'input' || tag === 'textarea' || tag === 'select')
+ if (inInput)
  return;
  const { type, id } = selectedItem.value;
  const arr = postcard[type];
@@ -244,6 +283,7 @@ function handleKeydown(e) {
  if (idx >= 0) {
  arr.splice(idx, 1);
  selectedItem.value = null;
+ historyPush(deepClone(postcard));
  showToast('已删除选中元素', 'info');
  }
  }
@@ -252,6 +292,40 @@ function handleKeydown(e) {
  saveWork();
  }
 }
+function onInteractionStart() {
+ isInteracting.value = true;
+ clearTimeout(pushDebounceTimer);
+}
+function onInteractionEnd() {
+ isInteracting.value = false;
+ historyPush(deepClone(postcard));
+}
+async function restoreSnapshot(snapshot) {
+ isRestoring.value = true;
+ Object.assign(postcard, createEmpty());
+ await nextTick();
+ Object.assign(postcard, {
+ id: snapshot.id || '',
+ name: snapshot.name || '',
+ paperId: snapshot.paperId || 'p1',
+ texts: snapshot.texts || [],
+ photos: snapshot.photos || [],
+ stamps: snapshot.stamps || [],
+ postmarks: snapshot.postmarks || []
+ });
+ nameInput.value = postcard.name;
+ selectedItem.value = null;
+ await nextTick();
+ isRestoring.value = false;
+}
+function handleUndo() {
+ const snapshot = undo();
+ if (snapshot) restoreSnapshot(snapshot);
+}
+function handleRedo() {
+ const snapshot = redo();
+ if (snapshot) restoreSnapshot(snapshot);
+}
 watch([() => postcard.paperId, () => postcard.texts, () => postcard.photos, () => postcard.stamps, () => postcard.postmarks, nameInput], () => {
  autoSaveDraft();
 }, { deep: true });
@@ -259,7 +333,7 @@ onMounted(async () => {
  document.addEventListener('keydown', handleKeydown);
  const draftRes = await mockApi.getDraft();
  hasDraft.value = !!(draftRes.code === 200 && draftRes.data);
- applyTemplate(defaultTemplates[0]);
+ applyTemplate(defaultTemplates[0], true);
 });
 onUnmounted(() => {
  document.removeEventListener('keydown', handleKeydown);
@@ -290,6 +364,24 @@ onUnmounted(() => {
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
+          <button
+            class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap"
+            :class="{ 'opacity-30 cursor-not-allowed': !canUndo }"
+            :disabled="!canUndo"
+            @click="handleUndo"
+            title="撤销 (Ctrl+Z)"
+          >
+            ↩️ 撤销
+          </button>
+          <button
+            class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap"
+            :class="{ 'opacity-30 cursor-not-allowed': !canRedo }"
+            :disabled="!canRedo"
+            @click="handleRedo"
+            title="重做 (Ctrl+Y)"
+          >
+            ↪️ 重做
+          </button>
           <button class="btn-secondary !text-xs !py-1.5 !px-3 whitespace-nowrap" @click="resetCanvas">
             🆕 新建
           </button>
@@ -337,6 +429,8 @@ onUnmounted(() => {
         />
         <div class="panel text-xs font-serif-sc text-navy-700 space-y-2">
           <div class="section-title !text-base !mb-2">⌨️ 快捷键</div>
+          <div class="flex justify-between"><span>撤销</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Ctrl+Z</kbd></div>
+          <div class="flex justify-between"><span>重做</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Ctrl+Y</kbd></div>
           <div class="flex justify-between"><span>删除元素</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Del</kbd></div>
           <div class="flex justify-between"><span>保存作品</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Ctrl+S</kbd></div>
           <div class="flex justify-between"><span>等比缩放照片</span><kbd class="bg-kraft-200 px-1.5 py-0.5 rounded border border-kraft-400">Shift+拖</kbd></div>
@@ -354,6 +448,8 @@ onUnmounted(() => {
             :selected="selectedItem"
             @update:model-value="updatePostcard"
             @select-item="selectItemHandler"
+            @interaction-start="onInteractionStart"
+            @interaction-end="onInteractionEnd"
           />
         </div>
         <div class="text-center text-xs text-kraft-600 font-serif-sc mt-2">
