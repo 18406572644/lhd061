@@ -320,7 +320,7 @@ async function doExport(type) {
  suffix = '正面';
  } else if (type === 'back') {
  if (is3DMode.value) {
- targetEl = card3DRef.value?.backCanvasRef;
+ targetEl = card3DRef.value?.exportBackCanvasRef;
  } else {
  showToast('请先切换到 3D 预览模式导出背面', 'error');
  exporting.value = false;
@@ -368,12 +368,13 @@ async function exportFlipAnimation() {
  exportingType.value = '3d_gif';
  try {
  const frames = [];
- const sceneEl = card3DRef.value?.$el?.querySelector('[ref="sceneRef"]') || card3DRef.value?.$el?.firstElementChild;
- if (!sceneEl) {
+ const sceneEl = card3DRef.value?.sceneRef;
+ const rootEl = card3DRef.value?.rootRef;
+ if (!sceneEl || !rootEl) {
  showToast('3D 场景未找到', 'error');
  return;
  }
- if (card3DRef.value?.flipProgress > 0.5) {
+ if (card3DRef.value?.getFlipProgress() > 0.5) {
  await card3DRef.value?.toggleFlip();
  await new Promise(r => setTimeout(r, 1300));
  }
@@ -383,13 +384,12 @@ async function exportFlipAnimation() {
  const frameCount = 24;
  for (let i = 0; i < frameCount; i++) {
  const progress = i / (frameCount - 1);
- const angle = progress * 180;
  if (card3DRef.value) {
- card3DRef.value.flipProgress.value = progress;
+ card3DRef.value.setFlipProgress(progress);
  }
  await new Promise(r => setTimeout(r, 50));
  try {
- const canvas = await html2canvas(card3DRef.value.$el, {
+ const canvas = await html2canvas(rootEl, {
  scale: 1.5,
  useCORS: true,
  allowTaint: true,
@@ -397,7 +397,9 @@ async function exportFlipAnimation() {
  logging: false,
  imageTimeout: 5000
  });
+ if (canvas.width > 0 && canvas.height > 0) {
  frames.push(canvas);
+ }
  } catch (e) {
  console.warn('帧截取失败', i, e);
  }
@@ -406,11 +408,11 @@ async function exportFlipAnimation() {
  for (let i = 0; i < frameCount; i++) {
  const progress = 1 - i / (frameCount - 1);
  if (card3DRef.value) {
- card3DRef.value.flipProgress.value = progress;
+ card3DRef.value.setFlipProgress(progress);
  }
  await new Promise(r => setTimeout(r, 50));
  try {
- const canvas = await html2canvas(card3DRef.value.$el, {
+ const canvas = await html2canvas(rootEl, {
  scale: 1.5,
  useCORS: true,
  allowTaint: true,
@@ -418,13 +420,15 @@ async function exportFlipAnimation() {
  logging: false,
  imageTimeout: 5000
  });
+ if (canvas.width > 0 && canvas.height > 0) {
  frames.push(canvas);
+ }
  } catch (e) {
  console.warn('帧截取失败', i, e);
  }
  }
  if (card3DRef.value) {
- card3DRef.value.flipProgress.value = 0;
+ card3DRef.value.setFlipProgress(0);
  }
  if (frames.length === 0) {
  showToast('动画帧截取失败，请重试', 'error');
@@ -873,7 +877,8 @@ onUnmounted(() => {
         />
         <BackEditor
           v-show="rightPanelTab === 'back'"
-          v-model="backContent"
+          :model-value="backContent"
+          @update:model-value="updateBackContent"
         />
       </aside>
     </div>

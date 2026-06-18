@@ -20,10 +20,12 @@ const props = defineProps({
 
 const emit = defineEmits(['update:backContent', 'flip-complete']);
 
+const rootRef = ref(null);
 const sceneRef = ref(null);
 const cardRef = ref(null);
 const frontCanvasRef = ref(null);
 const backCanvasRef = ref(null);
+const exportBackCanvasRef = ref(null);
 
 const rotateX = ref(-10);
 const rotateY = ref(-20);
@@ -196,6 +198,18 @@ function resetView() {
   rotateY.value = -20;
 }
 
+function setFlipProgress(val) {
+  if (isFlipping.value) {
+    if (flipAnimFrame.value) cancelAnimationFrame(flipAnimFrame.value);
+    isFlipping.value = false;
+  }
+  flipProgress.value = Math.max(0, Math.min(1, val));
+}
+
+function getFlipProgress() {
+  return flipProgress.value;
+}
+
 function startAutoRotate() {
   if (autoRotateTimer.value) return;
   let angle = rotateY.value;
@@ -231,11 +245,15 @@ function pmBox(scale = 1) {
 }
 
 defineExpose({
+  rootRef,
+  sceneRef,
   frontCanvasRef,
   backCanvasRef,
+  exportBackCanvasRef,
   toggleFlip,
   resetView,
-  flipProgress,
+  setFlipProgress,
+  getFlipProgress,
   isFlipping
 });
 
@@ -248,7 +266,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full flex items-center justify-center p-8 bg-gradient-to-br from-navy-900 via-navy-800 to-navy-900 overflow-hidden relative">
+  <div
+    ref="rootRef"
+    class="w-full h-full flex items-center justify-center p-8 bg-gradient-to-br from-navy-900 via-navy-800 to-navy-900 overflow-hidden relative"
+  >
     <div
       ref="sceneRef"
       class="relative"
@@ -594,5 +615,105 @@ onUnmounted(() => {
     <div class="absolute top-4 left-4 text-kraft-200/70 text-xs font-serif-sc z-10">
       💡 拖拽旋转查看 · 点击按钮翻页
     </div>
+  </div>
+
+  <div
+    ref="exportBackCanvasRef"
+    class="shadow-vintage absolute top-0 left-0 z-[-1]"
+    :style="{
+      width: CARD_W + 'px',
+      height: CARD_H + 'px',
+      opacity: 0,
+      pointerEvents: 'none',
+      position: 'fixed',
+      top: '-99999px',
+      left: '-99999px',
+      ...backCanvasStyle
+    }"
+  >
+    <div class="absolute left-0 top-0 w-1/2 h-full border-r-2 border-dashed border-navy-400/40 px-8 py-10 flex flex-col">
+      <div class="mb-6">
+        <div class="text-[11px] font-serif-sc uppercase tracking-widest text-navy-600/70 mb-2">祝福语 / Message</div>
+        <div class="min-h-[180px] font-handwriting text-navy-800 text-lg leading-relaxed whitespace-pre-wrap">
+          {{ backContent.message || '（在此写下你的祝福...）' }}
+        </div>
+      </div>
+      <div class="mt-auto">
+        <div class="text-[11px] font-serif-sc uppercase tracking-widest text-navy-600/70 mb-1">寄信人 / From</div>
+        <div class="font-handwriting text-navy-700 text-lg">
+          {{ backContent.sender || '（署名）' }}
+        </div>
+      </div>
+    </div>
+    <div class="absolute right-0 top-0 w-1/2 h-full px-6 py-8 flex flex-col">
+      <div class="self-end mb-4">
+        <div
+          v-if="getStamp(backContent.stampId)"
+          class="stamp-perforation w-[90px] h-[110px] shadow-stamp flex flex-col items-center justify-center p-2"
+          :style="{ backgroundColor: getStamp(backContent.stampId).bg }"
+        >
+          <div class="text-3xl mb-1">{{ getStamp(backContent.stampId).emoji }}</div>
+          <div
+            class="text-[9px] font-serif-sc font-bold uppercase tracking-wider leading-tight text-center"
+            :style="{ color: getStamp(backContent.stampId).color }"
+          >
+            {{ getStamp(backContent.stampId).name }}
+          </div>
+          <div
+            class="mt-0.5 px-1 py-0.5 border text-[9px] font-serif-sc font-bold"
+            :style="{ borderColor: getStamp(backContent.stampId).color, color: getStamp(backContent.stampId).color }"
+          >
+            ¥{{ getStamp(backContent.stampId).value }}
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="getPostmark(backContent.postmarkId)"
+        class="absolute right-10 top-24 w-[120px] h-[120px] opacity-80"
+      >
+        <svg
+          viewBox="0 0 140 140"
+          class="w-full h-full"
+          :style="{ transform: `rotate(${getPostmark(backContent.postmarkId).rotation}deg)` }"
+        >
+          <circle cx="70" cy="70" r="64" fill="none" :stroke="getPostmark(backContent.postmarkId).color" stroke-width="2" stroke-dasharray="4 3" opacity="0.85"/>
+          <circle cx="70" cy="70" r="52" fill="none" :stroke="getPostmark(backContent.postmarkId).color" stroke-width="1" opacity="0.6"/>
+          <circle cx="70" cy="70" r="36" fill="none" :stroke="getPostmark(backContent.postmarkId).color" stroke-width="1" opacity="0.6"/>
+          <text x="70" y="40" text-anchor="middle" :fill="getPostmark(backContent.postmarkId).color" font-family="'Playfair Display', serif" font-size="10" font-weight="700" letter-spacing="2" opacity="0.9">{{ getPostmark(backContent.postmarkId).location }}</text>
+          <line x1="24" y1="55" x2="116" y2="55" :stroke="getPostmark(backContent.postmarkId).color" stroke-width="1" opacity="0.5"/>
+          <line x1="24" y1="85" x2="116" y2="85" :stroke="getPostmark(backContent.postmarkId).color" stroke-width="1" opacity="0.5"/>
+          <text x="70" y="74" text-anchor="middle" :fill="getPostmark(backContent.postmarkId).color" font-family="'Playfair Display', serif" font-size="9" font-weight="600" letter-spacing="1.5" opacity="0.9">{{ getPostmark(backContent.postmarkId).date }}</text>
+          <text x="70" y="108" text-anchor="middle" :fill="getPostmark(backContent.postmarkId).color" font-family="'Caveat', cursive" font-size="12" font-weight="600" opacity="0.85">PAR AVION</text>
+        </svg>
+      </div>
+      <div class="mt-auto space-y-3">
+        <div>
+          <div class="text-[11px] font-serif-sc uppercase tracking-widest text-navy-600/70 mb-1">收件人 / To</div>
+          <div class="font-serif-sc text-navy-900 text-2xl font-bold border-b-2 border-navy-500/40 pb-1">
+            {{ backContent.recipient || '___________' }}
+          </div>
+        </div>
+        <div>
+          <div class="text-[11px] font-serif-sc uppercase tracking-widest text-navy-600/70 mb-1">地址 / Address</div>
+          <div class="font-handwriting text-navy-800 text-xl leading-relaxed min-h-[60px]">
+            {{ backContent.address || '_________________' }}
+          </div>
+        </div>
+        <div>
+          <div class="text-[11px] font-serif-sc uppercase tracking-widest text-navy-600/70 mb-1">城市 / City</div>
+          <div class="font-handwriting text-navy-800 text-xl">
+            {{ backContent.city || '_________________' }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="absolute inset-0 pointer-events-none"
+      style="
+        background: linear-gradient(225deg, rgba(255,255,255,0.08) 0%, transparent 40%),
+                    linear-gradient(45deg, rgba(0,0,0,0.15) 0%, transparent 40%);
+        mix-blend-mode: overlay;
+      "
+    ></div>
   </div>
 </template>
