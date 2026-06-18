@@ -84,7 +84,9 @@ function applyTemplate(tpl, initHistory) {
  texts: cloned.texts || [],
  photos: cloned.photos || [],
  stamps: cloned.stamps || [],
- postmarks: cloned.postmarks || []
+ postmarks: cloned.postmarks || [],
+ audios: cloned.audios || [],
+ qrcodes: cloned.qrcodes || []
  });
  if (cloned.backContent) {
  Object.assign(backContent, cloned.backContent);
@@ -132,7 +134,9 @@ function loadWork(work) {
  texts: cloned.texts || [],
  photos: cloned.photos || [],
  stamps: cloned.stamps || [],
- postmarks: cloned.postmarks || []
+ postmarks: cloned.postmarks || [],
+ audios: cloned.audios || [],
+ qrcodes: cloned.qrcodes || []
  });
  if (cloned.backContent) {
  Object.assign(backContent, cloned.backContent);

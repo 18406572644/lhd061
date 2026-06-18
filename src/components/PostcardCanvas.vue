@@ -423,7 +423,7 @@ defineExpose({ canvasRef });
       <div
         v-for="au in modelValue.audios"
         :key="au.id"
-        class="absolute cursor-move group"
+        class="absolute cursor-move group z-10"
         :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('audios', au.id) }"
         :style="{
           left: au.x + 'px',
@@ -463,7 +463,7 @@ defineExpose({ canvasRef });
       <div
         v-for="qr in modelValue.qrcodes"
         :key="qr.id"
-        class="absolute cursor-move group"
+        class="absolute cursor-move group z-10"
         :class="{ 'ring-2 ring-navy-500 ring-offset-2 ring-offset-kraft-100': !readOnly && isSelected('qrcodes', qr.id) }"
         :style="{
           left: qr.x + 'px',
